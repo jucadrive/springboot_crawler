@@ -10,18 +10,29 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class CrawlingScheduler {
 
-    @Value("${crawler.base_url}")
+    @Value("${crawler.base_web_url}")
     String baseUrl;
+
+    @Value("${crawler.base_stock_price_url}")
+    String baseStockPriceUrl;
 
     @Value("${crawler.max_depth}")
     int maxDepth;
 
     private final WebCrawlingService webCrawlingService;
 
+//    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(30000, 60000)}") // 5분 ~ 1시간 사이 랜덤 딜레이
+//    public void startWebCrawling() {
+//        System.out.println("==========크롤링 스케줄러 시작==========");
+//        webCrawlingService.startWebCrawling(baseUrl, maxDepth);
+//        System.out.println("==========크롤링 스케줄러 종료==========");
+//    }
+
     @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(30000, 60000)}") // 5분 ~ 1시간 사이 랜덤 딜레이
-    public void startWebCrawling() {
+    public void startFinanceCrawling() {
+        String url = baseStockPriceUrl + "005930";
         System.out.println("==========크롤링 스케줄러 시작==========");
-        webCrawlingService.startWebCrawling(baseUrl, maxDepth);
+        webCrawlingService.stockPriceCrawling(url, maxDepth);
         System.out.println("==========크롤링 스케줄러 종료==========");
     }
     
