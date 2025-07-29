@@ -27,25 +27,40 @@ public class StockPrice extends BaseTimeEntity {
     @Column(name = "current_price", nullable = false)
     private Integer currentPrice;
 
-    @Column(name = "change_price", nullable = false)
-    private Integer changePrice;
+    @Column(name = "change_price", nullable = false, length = 10)
+    private String changePrice;
 
-    @Column(name = "change_ratio", nullable = false, precision = 20, scale = 6)
-    private String changeRatio;
+    @Column(name = "change_rate", nullable = false, length = 10)
+    private String changeRate;
 
-    @Column(name = "trade_volume", nullable = false)
-    private Long tradeVolume;
+    @Column(name = "sales_revenue", nullable = false)
+    private Integer salesRevenue;
 
-    @Column(name = "trading_value", nullable = false)
-    private Long tradingValue;
+    @Column(name = "oper_profit", nullable = false)
+    private Integer operProfit;
 
-    @Column(name = "opening_price", nullable = false)
+    @Column(name = "adjusted_oper_profit", nullable = false)
+    private Integer adjustedOperProfit;
+
+    @Column(name = "oper_profit_growth_rate", nullable = false, length = 10)
+    private String operProfitGrowthRate;
+
+    @Column(name = "net_income", nullable = false)
+    private Integer netIncome;
+
+    @Column(name = "earning_per_share", nullable = false, length = 20)
+    private String earningPerShare;
+
+    @Column(name = "roe", nullable = false, length = 20)
+    private String roe;
+
+    @Column(name = "opening_price")
     private Integer openingPrice;
 
-    @Column(name = "high_price", nullable = false)
+    @Column(name = "high_price")
     private Integer highPrice;
 
-    @Column(name = "low_price", nullable = false)
+    @Column(name = "low_price")
     private Integer lowPrice;
 
     @Column(name = "ending_price")
@@ -93,12 +108,6 @@ public class StockPrice extends BaseTimeEntity {
     @Column(name = "dividend_yield", length = 10)
     private String dividendYield;
 
-    @Column(name = "industry_per", length = 10)
-    private String industryPer;
-
-    @Column(name = "industry_fluctuation_rate", length = 10)
-    private String industryFluctuationRate;
-
     @Column(name = "status_code")
     private Integer statusCode;
 
@@ -109,19 +118,25 @@ public class StockPrice extends BaseTimeEntity {
     private LocalDateTime collectedAt;
 
     @Builder
-    public StockPrice(String stockCode, String stockNm, Integer currentPrice, Integer changePrice,
-                      String changeRatio, Long tradeVolume, Long tradingValue, Integer openingPrice, Integer highPrice,
+    public StockPrice(String stockCode, String stockNm, Integer currentPrice, String changePrice,
+                      String changeRate, Integer salesRevenue, Integer operProfit, Integer adjustedOperProfit, String operProfitGrowthRate,
+                      Integer netIncome, String earningPerShare, String roe, Integer openingPrice, Integer highPrice,
                       Integer lowPrice, Integer endingPrice, String marketCap, String marketCapRank, Long listedSharesCount, Integer parValue,
                       Integer tradingUnit, String investmentOpinion, Integer targetPrice, Integer fiftyTwoWeekHigh, Integer fiftyTwoWeekLow,
-                      String currentPer, Integer currentEps, String pbr, Integer bps, String dividendYield, String industryPer, String industryFluctuationRate,
+                      String currentPer, Integer currentEps, String pbr, Integer bps, String dividendYield,
                       Integer statusCode, String errorMessage, LocalDateTime collectedAt) {
         this.stockCode = stockCode;
         this.stockNm = stockNm;
         this.currentPrice = currentPrice;
         this.changePrice = changePrice;
-        this.changeRatio = changeRatio;
-        this.tradeVolume = tradeVolume;
-        this.tradingValue = tradingValue;
+        this.changeRate = changeRate;
+        this.salesRevenue = salesRevenue;
+        this.operProfit = operProfit;
+        this.adjustedOperProfit = adjustedOperProfit;
+        this.operProfitGrowthRate = operProfitGrowthRate;
+        this.netIncome = netIncome;
+        this.earningPerShare = earningPerShare;
+        this.roe = roe;
         this.openingPrice = openingPrice;
         this.highPrice = highPrice;
         this.lowPrice = lowPrice;
@@ -140,8 +155,6 @@ public class StockPrice extends BaseTimeEntity {
         this.pbr = pbr;
         this.bps = bps;
         this.dividendYield = dividendYield;
-        this.industryPer = industryPer;
-        this.industryFluctuationRate = industryFluctuationRate;
         this.statusCode = statusCode;
         this.errorMessage = errorMessage;
         this.collectedAt = collectedAt;
@@ -153,9 +166,14 @@ public class StockPrice extends BaseTimeEntity {
                 .stockNm(dto.getStockNm())
                 .currentPrice(dto.getCurrentPrice())
                 .changePrice(dto.getChangePrice())
-                .changeRatio(dto.getChangeRatio())
-                .tradeVolume(dto.getTradeVolume())
-                .tradingValue(dto.getTradingValue())
+                .changeRate(dto.getChangeRate())
+                .salesRevenue(dto.getSalesRevenue())
+                .operProfit(dto.getOperProfit())
+                .adjustedOperProfit(dto.getAdjustedOperProfit())
+                .operProfitGrowthRate(dto.getOperProfitGrowthRate())
+                .netIncome(dto.getNetIncome())
+                .earningPerShare(dto.getEarningPerShare())
+                .roe(dto.getRoe())
                 .openingPrice(dto.getOpeningPrice())
                 .highPrice(dto.getHighPrice())
                 .lowPrice(dto.getLowPrice())
@@ -174,8 +192,6 @@ public class StockPrice extends BaseTimeEntity {
                 .pbr(dto.getPbr())
                 .bps(dto.getBps())
                 .dividendYield(dto.getDividendYield())
-                .industryPer(dto.getIndustryPer())
-                .industryFluctuationRate(dto.getIndustryFluctuationRate())
                 .statusCode(dto.getStatusCode())
                 .errorMessage(dto.getErrorMessage())
                 .collectedAt(LocalDateTime.now())

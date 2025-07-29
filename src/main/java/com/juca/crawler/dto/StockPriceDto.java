@@ -19,10 +19,15 @@ public class StockPriceDto {
     private String stockCode;
     private String stockNm;
     private Integer currentPrice;
-    private Integer changePrice;
-    private String changeRatio;
-    private Long tradeVolume;
-    private Long tradingValue;
+    private String changePrice;
+    private String changeRate;
+    private Integer salesRevenue;
+    private Integer operProfit;
+    private Integer adjustedOperProfit;
+    private String operProfitGrowthRate;
+    private Integer netIncome;
+    private String earningPerShare;
+    private String roe;
     private Integer openingPrice;
     private Integer highPrice;
     private Integer lowPrice;
@@ -41,8 +46,6 @@ public class StockPriceDto {
     private String pbr;
     private Integer bps;
     private String dividendYield;
-    private String industryPer;
-    private String industryFluctuationRate;
     private Integer statusCode;
     private String errorMessage;
     private LocalDateTime collectedAt;

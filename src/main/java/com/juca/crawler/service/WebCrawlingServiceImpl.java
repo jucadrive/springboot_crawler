@@ -219,8 +219,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 continue;
             }
 
-            System.out.println("크롤링 시작: " + currentUrl + " (깊이: " + currentDepth + ")");
-
             Document doc = null;
 
             try {
@@ -236,66 +234,28 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 String contentType = response.contentType();
                 String htmlContent = null;
 
-                System.out.println("상태 코드: " + statusCode);
-
                 if (contentType != null && contentType.startsWith("text/html") && statusCode == 200) {
                     htmlContent = response.body();
                     doc = Jsoup.parse(htmlContent);
 
                     // 테이블 데이터를 저장할 리스트
-                    Map<String, String> stockData = new LinkedHashMap<>();
+                    Map<String, String> stockDataMap = new LinkedHashMap<>();
 
 //                  ==============================================================================
 
                     // ----------------------------------------------------
                     // 1. 동종업종 비교 테이블에서 첫 번째 종목 정보 파싱
                     // ----------------------------------------------------
-                    parseComparativeTable(doc, stockData);
+                    parseComparativeTable(doc, stockDataMap);
 
                     // ----------------------------------------------------
                     // 2. tab_con1 영역에서 추가 정보 파싱
                     // ----------------------------------------------------
-                    parseTabCon1Section(doc, stockData);
+                    parseTabCon1Section(doc, stockDataMap);
 
-                    System.out.println("--- 파싱된 종목 데이터 ---");
-                    for (Map.Entry<String, String> entry : stockData.entrySet()) {
-                        System.out.println(entry.getKey() + ": " + entry.getValue());
-                    }
-
-
-
-//                    StockPriceDto stockPriceDto = new StockPriceDto();
-//                    stockPriceDto.setStockCode(stockCode);
-//                    stockPriceDto.setStockNm(stockName);
-//                    stockPriceDto.setCurrentPrice(convertToInt(currentPrice));
-//                    stockPriceDto.setChangePrice(convertToInt(changePrice));
-//                    stockPriceDto.setChangeRatio(changeRatio);
-//                    stockPriceDto.setTradeVolume(convertToLong(tradeVolume));
-//                    stockPriceDto.setTradingValue(convertToLong(tradeValue));
-//                    stockPriceDto.setOpeningPrice(convertToInt(openingPrice));
-//                    stockPriceDto.setHighPrice(convertToInt(highPrice));
-//                    stockPriceDto.setLowPrice(convertToInt(lowPrice));
-//                    stockPriceDto.setEndingPrice(convertToInt(prevClosingPrice));
-//                    stockPriceDto.setMarketCap(marketCap);
-//                    stockPriceDto.setMarketCapRank(marketCapRank);
-//                    stockPriceDto.setListedSharesCount(convertToLong(listedSharesCount));
-//                    stockPriceDto.setParValue(convertToInt(parValue));
-//                    stockPriceDto.setTradingUnit(convertToInt(tradingUnit));
-//                    stockPriceDto.setInvestmentOpinion(investmentOpinion);
-//                    stockPriceDto.setTargetPrice(convertToInt(targetPrice));
-//                    stockPriceDto.setFiftyTwoWeekHigh(convertToInt(fiftyTwoWeekHigh));
-//                    stockPriceDto.setFiftyTwoWeekLow(convertToInt(fiftyTwoWeekLow));
-//                    stockPriceDto.setCurrentPer(currentPER);
-//                    stockPriceDto.setCurrentEps(convertToInt(currentEPS));
-//                    stockPriceDto.setPbr(pbr);
-//                    stockPriceDto.setBps(convertToInt(bps));
-//                    stockPriceDto.setDividendYield(dividendYield);
-//                    stockPriceDto.setIndustryPer(industryPER);
-//                    stockPriceDto.setIndustryFluctuationRate(industryFluctuationRate);
-//                    stockPriceDto.setStatusCode(statusCode);
-//
-//                    StockPrice entity = StockPrice.dtoToEntity(stockPriceDto);
-//                    stockPriceRepository.save(entity);
+                    StockPriceDto stockDto = mapToStockPriceDto(stockDataMap);
+                    StockPrice entity = StockPrice.dtoToEntity(stockDto);
+                    stockPriceRepository.save(entity);
                 }
             } catch (Exception e) {
                 StockPriceDto stockPriceDto = new StockPriceDto();
@@ -310,13 +270,12 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
     /**
      * 동종업종 비교 테이블에서 첫 번째 종목 (검색한 종목)의 정보를 파싱합니다.
      * @param doc Jsoup Document 객체
-     * @param stockData 데이터를 저장할 Map
+     * @param stockDataMap 데이터를 저장할 Map
      */
-    private static void parseComparativeTable(Document doc, Map<String, String> stockData) {
+    private static void parseComparativeTable(Document doc, Map<String, String> stockDataMap) {
         Element table = doc.selectFirst("table.tb_type1.tb_num[summary*='동종업종 비교']");
 
         if (table == null) {
-            System.out.println("DEBUG: 동종업종 비교 테이블을 찾을 수 없습니다.");
             return;
         }
 
@@ -325,10 +284,10 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         if (firstStockHeader != null) {
             Element link = firstStockHeader.selectFirst("a");
             if (link != null) {
-                stockData.put("종목명", link.ownText().trim()); // 링크 자체 텍스트 (삼성전자)
+                stockDataMap.put("stockNm", link.ownText().trim()); // 종목명 -> stockNm
                 Element codeEm = link.selectFirst("em");
                 if (codeEm != null) {
-                    stockData.put("종목코드", codeEm.text().trim()); // 005930
+                    stockDataMap.put("stockCode", codeEm.text().trim()); // 종목코드 -> stockCode
                 }
             }
         }
@@ -348,41 +307,78 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
             String value;
 
-            // 시가총액, 외국인비율, PER, PBR은 이 테이블에서 가져오지 않음 (아래 tab_con1에서 가져올 예정)
-            if (itemName.equals("시가총액(억)") || itemName.equals("외국인비율(%)") ||
-                    itemName.equals("PER(%)") || itemName.equals("PBR(배)")) {
-                continue; // 이 항목들은 건너뛰고 다음 테이블에서 가져올 것임
-            }
+            // DTO 필드명에 매핑될 키 값
+            String mapKey = null;
 
-            // '전일대비'와 '등락률' 항목 특수 처리
-            if (itemName.equals("전일대비") || itemName.equals("등락률")) {
-                Element emElement = firstCell.selectFirst("em");
-                if (emElement != null) {
-                    // '하향' 또는 '상향' 텍스트를 '하락' 또는 '상승'으로 변경하여 포함
-                    value = emElement.text().trim()
-                            .replace("하향", "하락")
-                            .replace("상향", "상승");
-                } else {
+            switch (itemName) {
+                case "현재가":
+                    mapKey = "currentPrice";
                     value = firstCell.text().trim();
-                }
-            } else {
-                // 그 외의 항목들은 td의 직접적인 텍스트를 가져옴
-                value = firstCell.text().trim();
+                    break;
+                case "전일대비":
+                    mapKey = "changePrice";
+                    Element emChangePrice = firstCell.selectFirst("em");
+                    value = (emChangePrice != null) ? emChangePrice.text().trim()
+                            .replace("하향", "▼").replace("상향", "▲") : firstCell.text().trim();
+                    break;
+                case "등락률":
+                    mapKey = "changeRate";
+                    Element emChangeRate = firstCell.selectFirst("em");
+                    value = (emChangeRate != null) ? emChangeRate.text().trim()
+                            .replace("하향", "").replace("상향", "") : firstCell.text().trim();
+                    break;
+                case "매출액(억)":
+                    mapKey = "salesRevenue";
+                    value = firstCell.text().trim();
+                    break;
+                case "영업이익(억)":
+                    mapKey = "operProfit";
+                    value = firstCell.text().trim();
+                    break;
+                case "조정영업이익(억)":
+                    mapKey = "adjustedOperProfit";
+                    value = firstCell.text().trim();
+                    break;
+                case "영업이익증가율(%)":
+                    mapKey = "operProfitGrowthRate";
+                    value = firstCell.text().trim();
+                    break;
+                case "당기순이익(억)":
+                    mapKey = "netIncome";
+                    value = firstCell.text().trim();
+                    break;
+                case "주당순이익(원)":
+                    mapKey = "earningPerShare";
+                    value = firstCell.text().trim();
+                    break;
+                case "ROE(%)":
+                    mapKey = "roe";
+                    value = firstCell.text().trim();
+                    break;
+                // 이 항목들은 tab_con1에서 가져올 예정이므로 건너뜀
+                case "시가총액(억)":
+                case "외국인비율(%)":
+                case "PER(%)":
+                case "PBR(배)":
+                    continue;
+                default:
+                    // 정의되지 않은 항목은 무시하거나, 필요에 따라 처리
+                    continue;
             }
-
-            stockData.put(itemName, value);
+            if (mapKey != null) {
+                stockDataMap.put(mapKey, value);
+            }
         }
     }
 
     /**
      * tab_con1 영역에서 메인 종목의 추가 상세 정보를 파싱합니다.
      * @param doc Jsoup Document 객체
-     * @param stockData 데이터를 저장할 Map
+     * @param stockDataMap 데이터를 저장할 Map
      */
-    private static void parseTabCon1Section(Document doc, Map<String, String> stockData) {
+    private static void parseTabCon1Section(Document doc, Map<String, String> stockDataMap) {
         Element tabCon1 = doc.selectFirst("div#tab_con1");
         if (tabCon1 == null) {
-            System.out.println("DEBUG: tab_con1 섹션을 찾을 수 없습니다.");
             return;
         }
 
@@ -392,17 +388,17 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
             // 시가총액
             Element marketSumEm = marketSumTable.selectFirst("th:contains(시가총액) + td em");
             if (marketSumEm != null) {
-                stockData.put("시가총액", cleanAndCombineText(marketSumEm.parent())); // '억원'까지 포함
+                stockDataMap.put("marketCap", cleanAndCombineText(marketSumEm.parent())); // '억원'까지 포함
             }
             // 시가총액순위
             Element rankTd = marketSumTable.selectFirst("th:contains(시가총액순위) + td");
             if (rankTd != null) {
-                stockData.put("시가총액순위", rankTd.text().trim());
+                stockDataMap.put("marketCapRank", rankTd.text().trim());
             }
             // 상장주식수
             Element listedSharesEm = marketSumTable.selectFirst("th:contains(상장주식수) + td em");
             if (listedSharesEm != null) {
-                stockData.put("상장주식수", listedSharesEm.text().trim());
+                stockDataMap.put("listedSharesCount", listedSharesEm.text().trim());
             }
             // 액면가 | 매매단위
             Element faceValueTd = marketSumTable.selectFirst("th:contains(액면가) + td");
@@ -413,10 +409,11 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 Pattern pattern = Pattern.compile("(.+원)\\s*l\\s*(.+주)");
                 Matcher matcher = pattern.matcher(fullText);
                 if (matcher.find()) {
-                    stockData.put("액면가", matcher.group(1));
-                    stockData.put("매매단위", matcher.group(2));
+                    stockDataMap.put("parValue", matcher.group(1));
+                    stockDataMap.put("tradingUnit", matcher.group(2));
                 } else {
-                    stockData.put("액면가/매매단위", fullText); // 분리 실패 시 전체 저장
+                    stockDataMap.put("parValue", fullText); // 분리 실패 시 전체 저장
+                    stockDataMap.put("tradingUnit", null);
                 }
             }
         }
@@ -436,10 +433,11 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 Pattern pattern = Pattern.compile("(.+?)\\s*l\\s*(.+)");
                 Matcher matcher = pattern.matcher(fullText);
                 if (matcher.find()) {
-                    stockData.put("투자의견", matcher.group(1));
-                    stockData.put("목표주가", matcher.group(2));
+                    stockDataMap.put("investmentOpinion", matcher.group(1));
+                    stockDataMap.put("targetPrice", matcher.group(2));
                 } else {
-                    stockData.put("투자의견/목표주가", fullText);
+                    stockDataMap.put("investmentOpinion", fullText);
+                    stockDataMap.put("targetPrice", null);
                 }
             }
 
@@ -451,10 +449,11 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 Pattern pattern = Pattern.compile("(.+?)\\s*l\\s*(.+)");
                 Matcher matcher = pattern.matcher(fullText);
                 if (matcher.find()) {
-                    stockData.put("52주최고", matcher.group(1));
-                    stockData.put("52주최저", matcher.group(2));
+                    stockDataMap.put("fiftyTwoWeekHigh", matcher.group(1));
+                    stockDataMap.put("fiftyTwoWeekLow", matcher.group(2));
                 } else {
-                    stockData.put("52주최고/최저", fullText);
+                    stockDataMap.put("fiftyTwoWeekHigh", fullText);
+                    stockDataMap.put("fiftyTwoWeekLow", null);
                 }
             }
         }
@@ -469,10 +468,11 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 Pattern pattern = Pattern.compile("(.+?배)\\s*l\\s*(.+원)");
                 Matcher matcher = pattern.matcher(fullText);
                 if (matcher.find()) {
-                    stockData.put("PER", matcher.group(1));
-                    stockData.put("EPS", matcher.group(2));
+                    stockDataMap.put("currentPer", matcher.group(1));
+                    stockDataMap.put("currentEps", matcher.group(2));
                 } else {
-                    stockData.put("PER/EPS", fullText);
+                    stockDataMap.put("currentPer", fullText);
+                    stockDataMap.put("currentEps", null);
                 }
             }
             // PBR | BPS
@@ -482,17 +482,122 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 Pattern pattern = Pattern.compile("(.+?배)\\s*l\\s*(.+원)");
                 Matcher matcher = pattern.matcher(fullText);
                 if (matcher.find()) {
-                    stockData.put("PBR", matcher.group(1));
-                    stockData.put("BPS", matcher.group(2));
+                    stockDataMap.put("pbr", matcher.group(1));
+                    stockDataMap.put("bps", matcher.group(2));
                 } else {
-                    stockData.put("PBR/BPS", fullText);
+                    stockDataMap.put("pbr", fullText);
+                    stockDataMap.put("bps", null);
                 }
             }
             // 배당수익률
             Element dividendYieldTd = perEpsTable.selectFirst("th:contains(배당수익률) + td em");
             if (dividendYieldTd != null) {
-                stockData.put("배당수익률", dividendYieldTd.text().trim());
+                stockDataMap.put("dividendYield", dividendYieldTd.text().trim());
             }
+        }
+    }
+
+    /**
+     * Map<String, String> 에서 StockPriceDto 객체로 데이터를 매핑합니다.
+     * 숫자 형식의 문자열에서 쉼표나 한글 단위를 제거하고 적절한 타입으로 변환합니다.
+     * @param dataMap 파싱된 데이터가 담긴 Map
+     * @return StockPriceDto 객체
+     */
+    private static StockPriceDto mapToStockPriceDto(Map<String, String> dataMap) {
+        StockPriceDto dto = new StockPriceDto();
+
+        // ----------------------------------------------------
+        // 문자열 필드 매핑
+        // ----------------------------------------------------
+        dto.setStockCode(dataMap.get("stockCode"));
+        dto.setStockNm(dataMap.get("stockNm"));
+        dto.setChangePrice(dataMap.get("changePrice")); // 예: "하락 1,100"
+        dto.setChangeRate(dataMap.get("changeRate"));   // 예: "하락 -1.56%"
+        dto.setOperProfitGrowthRate(dataMap.get("operProfitGrowthRate")); // 예: "2.97"
+        dto.setEarningPerShare(dataMap.get("earningPerShare")); // 예: "1,186.35"
+        dto.setRoe(dataMap.get("roe")); // 예: "9.24"
+        dto.setMarketCap(dataMap.get("marketCap")); // 예: "416조 4,465억원"
+        dto.setMarketCapRank(dataMap.get("marketCapRank")); // 예: "코스피 1위"
+        dto.setInvestmentOpinion(dataMap.get("investmentOpinion")); // 예: "4.00매수"
+        dto.setCurrentPer(dataMap.get("currentPer")); // 예: "13.68배"
+        dto.setPbr(dataMap.get("pbr")); // 예: "1.20배"
+        dto.setDividendYield(dataMap.get("dividendYield")); // 예: "2.05%"
+
+        // ----------------------------------------------------
+        // 숫자 필드 변환 및 매핑 (문자열 클리닝 필수)
+        // ----------------------------------------------------
+        dto.setCurrentPrice(parseInteger(dataMap.get("currentPrice")));
+        dto.setSalesRevenue(parseInteger(dataMap.get("salesRevenue")));
+        dto.setOperProfit(parseInteger(dataMap.get("operProfit")));
+        dto.setAdjustedOperProfit(parseInteger(dataMap.get("adjustedOperProfit")));
+        dto.setNetIncome(parseInteger(dataMap.get("netIncome")));
+        dto.setTargetPrice(parseInteger(dataMap.get("targetPrice")));
+        dto.setFiftyTwoWeekHigh(parseInteger(dataMap.get("fiftyTwoWeekHigh")));
+        dto.setFiftyTwoWeekLow(parseInteger(dataMap.get("fiftyTwoWeekLow")));
+        dto.setCurrentEps(parseInteger(dataMap.get("currentEps")));
+        dto.setBps(parseInteger(dataMap.get("bps")));
+        dto.setParValue(parseInteger(dataMap.get("parValue"))); // "100원"에서 "원" 제거
+        dto.setTradingUnit(parseInteger(dataMap.get("tradingUnit"))); // "1주"에서 "주" 제거
+
+        // Long 타입
+        dto.setListedSharesCount(parseLong(dataMap.get("listedSharesCount")));
+
+        // ----------------------------------------------------
+        // 현재 HTML에 없는 필드 초기화 (필요시 별도 파싱 로직 추가)
+        // ----------------------------------------------------
+        dto.setOpeningPrice(null);
+        dto.setHighPrice(null);
+        dto.setLowPrice(null);
+        dto.setEndingPrice(null);
+
+
+        // ----------------------------------------------------
+        // 상태 및 시간 설정
+        // ----------------------------------------------------
+        dto.setStatusCode(200); // 성공 코드 (예시)
+        dto.setErrorMessage(null); // 에러 메시지 없음
+        dto.setCollectedAt(LocalDateTime.now()); // 현재 시간 설정
+
+        return dto;
+    }
+
+    /**
+     * 문자열에서 숫자만 추출하여 Integer로 변환 (쉼표, 한글 단위 제거)
+     * @param text 변환할 문자열
+     * @return Integer 값 또는 null (변환 실패 시)
+     */
+    private static Integer parseInteger(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        // 숫자, 소수점, 마이너스 기호만 남기고 모두 제거
+        // "1,186.35" -> "1186" (소수점 이하 버림)
+        // "100원" -> "100"
+        // "76,333" -> "76333"
+        String cleanedText = text.replaceAll("[^0-9\\-]", "");
+        try {
+            return Integer.parseInt(cleanedText);
+        } catch (NumberFormatException e) {
+            System.err.println("Integer 변환 실패: '" + text + "' -> '" + cleanedText + "'");
+            return null;
+        }
+    }
+
+    /**
+     * 문자열에서 숫자만 추출하여 Long으로 변환 (쉼표, 한글 단위 제거)
+     * @param text 변환할 문자열
+     * @return Long 값 또는 null (변환 실패 시)
+     */
+    private static Long parseLong(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        String cleanedText = text.replaceAll("[^0-9\\-]", "");
+        try {
+            return Long.parseLong(cleanedText);
+        } catch (NumberFormatException e) {
+            System.err.println("Long 변환 실패: '" + text + "' -> '" + cleanedText + "'");
+            return null;
         }
     }
 
@@ -520,42 +625,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         }
         // 여러 공백을 하나의 공백으로 줄이고, 앞뒤 공백 제거
         return sb.toString().replaceAll("\\s+", " ").trim();
-    }
-
-    private int convertToInt(String str) {
-
-        String cleanStr = str.replaceAll("^[0-9]+", "").trim();
-        return Integer.parseInt(cleanStr);
-    }
-
-    private Long convertToLong(String str) {
-        String cleanStr = str.replaceAll("^[0-9]+", "").trim();
-        return Long.parseLong(cleanStr);
-    }
-
-    // --- 헬퍼 함수: 자식 span 태그들의 텍스트를 합쳐서 반환 ---
-    private static String getCombinedSpanText(Element parentElement) {
-        if (parentElement == null) {
-            return null;
-        }
-        StringBuilder sb = new StringBuilder();
-        // 모든 자식 노드를 순회하여 텍스트 노드나 span 태그의 텍스트를 가져옴
-        for (org.jsoup.nodes.Node node : parentElement.childNodes()) {
-            if (node instanceof org.jsoup.nodes.TextNode) {
-                String text = ((org.jsoup.nodes.TextNode) node).text().trim();
-                if (!text.isEmpty()) {
-                    sb.append(text);
-                }
-            } else if (node instanceof Element) {
-                Element childElement = (Element) node;
-                // ico 클래스는 '하락', '상승' 같은 아이콘 텍스트이므로 제외하거나 필요에 따라 별도 처리
-                // 여기서는 숫자 관련 span만 포함하도록 필터링
-                if (childElement.tagName().equals("span") && !childElement.hasClass("ico")) {
-                    sb.append(childElement.text().trim());
-                }
-            }
-        }
-        return sb.toString().replaceAll("\\s+", ""); // 모든 공백 제거
     }
 
 
