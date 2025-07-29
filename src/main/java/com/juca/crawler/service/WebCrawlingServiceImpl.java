@@ -2,10 +2,13 @@ package com.juca.crawler.service;
 
 import com.juca.crawler.domain.CrawledPage;
 import com.juca.crawler.domain.ExtractedLink;
+import com.juca.crawler.domain.StockPrice;
 import com.juca.crawler.dto.CrawledPageDto;
 import com.juca.crawler.dto.ExtractedLinkDto;
+import com.juca.crawler.dto.StockPriceDto;
 import com.juca.crawler.repository.CrawledPageRepository;
 import com.juca.crawler.repository.ExtractedLinkRepository;
+import com.juca.crawler.repository.StockPriceRepository;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +22,9 @@ import org.springframework.stereotype.Service;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +36,7 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     private final CrawledPageRepository crawledPageRepository;
     private final ExtractedLinkRepository extractedLinkRepository;
+    private final StockPriceRepository stockPriceRepository;
 
     // 크롤링 작업 단위를 위한 내부 클래스
     @Getter
@@ -238,280 +241,323 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 if (contentType != null && contentType.startsWith("text/html") && statusCode == 200) {
                     htmlContent = response.body();
                     doc = Jsoup.parse(htmlContent);
-                    // 1. 종목명 (삼성전자)
-                    String stockName = null;
-                    // dl.blind 안의 dt 태그 안의 strong 태그
-                    Element stockNameElement = doc.select(".rate_info dl.blind dt strong").first();
-                    if (stockNameElement != null) {
-                        stockName = stockNameElement.text().trim();
-                    }
-                    System.out.println("종목명: " + stockName);
 
-                    // 2. 종목코드 (이 HTML에는 직접적인 종목코드 없음 - URL에서 추출해야 함)
-                    // 이 HTML 조각에는 '000660' 같은 종목코드가 보이지 않습니다.
-                    // 종목코드는 이전처럼 URL (https://finance.daum.net/quotes/A000660#home)에서 추출해야 합니다.
-                    String stockCode = null;
-                    // 클래스가 'description'인 div 태그 내부  클래스가 'code'인 span 태그
-                    Element stockCodeElement = doc.select("div.description > span.code").first();
-                    if (stockCodeElement != null) {
-                        stockCode = stockCodeElement.text().trim();
-                    }
-                    System.out.println("종목코드: " + stockCode);
+                    // 테이블 데이터를 저장할 리스트
+                    Map<String, String> stockData = new LinkedHashMap<>();
 
+//                  ==============================================================================
 
-                    // 3. 현재가 (70,300)
-                    String currentPrice = null;
-                    // .today p.no_today em.no_up 안에 있는 span.blind
-                    Element currentPriceElement = doc.select(".today p.no_today em.no_up span.blind").first();
-                    if (currentPriceElement != null) {
-                        currentPrice = currentPriceElement.text().trim();
-                    }
-                    System.out.println("현재가: " + currentPrice);
+                    // ----------------------------------------------------
+                    // 1. 동종업종 비교 테이블에서 첫 번째 종목 정보 파싱
+                    // ----------------------------------------------------
+                    parseComparativeTable(doc, stockData);
 
+                    // ----------------------------------------------------
+                    // 2. tab_con1 영역에서 추가 정보 파싱
+                    // ----------------------------------------------------
+                    parseTabCon1Section(doc, stockData);
 
-                    // 4. 전일 대비 (4,400)
-                    String changePrice = null;
-                    // .today p.no_exday 안의 첫 번째 em.no_up 안에 있는 span.blind
-                    Element changePriceElement = doc.select(".today p.no_exday em.no_up span.blind").first();
-                    if (changePriceElement != null) {
-                        changePrice = changePriceElement.text().trim();
-                    }
-                    System.out.println("전일 대비: " + changePrice);
-
-
-                    // 5. 등락률 (6.68%)
-                    String changeRatio = null;
-                    // .today p.no_exday 안의 두 번째 em.no_up 안에 있는 span.blind
-                    Element changeRatioBlindElement = doc.select(".today p.no_exday em.no_up:nth-of-type(2) span.blind").first();
-                    if (changeRatioBlindElement != null) {
-                        changeRatio = changeRatioBlindElement.text().trim() + "%"; // %는 별도 span으로 되어 있으니 붙여줍니다.
-                    }
-                    System.out.println("등락률: " + changeRatio);
-
-
-                    // 6. 전일 종가 (65,900)
-                    String prevClosingPrice = null;
-                    // table.no_info tbody tr:nth-of-type(1) td.first em span.blind
-                    Element prevClosingPriceElement = doc.select("table.no_info tbody tr:nth-of-type(1) td.first em span.blind").first();
-                    if (prevClosingPriceElement != null) {
-                        prevClosingPrice = prevClosingPriceElement.text().trim();
-                    }
-                    System.out.println("전일 종가: " + prevClosingPrice);
-
-
-                    // 7. 고가 (70,400)
-                    String highPrice = null;
-                    // table.no_info tbody tr:nth-of-type(1) td:nth-of-type(2) em.no_up span.blind
-                    Element highPriceElement = doc.select("table.no_info tbody tr:nth-of-type(1) td:nth-of-type(2) em.no_up span.blind").first();
-                    if (highPriceElement != null) {
-                        highPrice = highPriceElement.text().trim();
-                    }
-                    System.out.println("고가: " + highPrice);
-
-
-                    // 8. 거래량 (23,131,575)
-                    String tradeVolume = null;
-                    // table.no_info tbody tr:nth-of-type(1) td:nth-of-type(3) em span.blind
-                    Element tradeVolumeElement = doc.select("table.no_info tbody tr:nth-of-type(1) td:nth-of-type(3) em span.blind").first();
-                    if (tradeVolumeElement != null) {
-                        tradeVolume = tradeVolumeElement.text().trim();
-                    }
-                    System.out.println("거래량: " + tradeVolume);
-
-
-                    // 9. 시가 (68,200)
-                    String openingPrice = null;
-                    // em 태그 안에서 클래스 이름이 'no'로 시작하거나 'shim'인 span 태그들만 선택
-                    Elements openingPriceSpans = doc.select("div#rate_info_krx table.no_info tbody tr:nth-of-type(2) td.first em span[class^=no], div#rate_info_krx table.no_info tbody tr:nth-of-type(2) td.first em span.shim");
-                    if (!openingPriceSpans.isEmpty()) {
-                        StringBuilder sb = new StringBuilder();
-                        for (Element span : openingPriceSpans) {
-                            sb.append(span.text());
-                        }
-                        openingPrice = sb.toString();
-                    }
-                    System.out.println("시가: " + openingPrice);
-
-
-                    // 10. 저가 (65,600)
-                    String lowPrice = null;
-                    // em 태그 안에서 클래스 이름이 'no'로 시작하거나 'shim'인 span 태그들만 선택
-                    Elements lowPriceSpans = doc.select("div#rate_info_krx table.no_info tbody tr:nth-of-type(2) td:nth-of-type(2) em.no_up span[class^=no], div#rate_info_krx table.no_info tbody tr:nth-of-type(2) td:nth-of-type(2) em.no_up span.shim");
-                    if (!lowPriceSpans.isEmpty()) {
-                        StringBuilder sb = new StringBuilder();
-                        for (Element span : lowPriceSpans) {
-                            sb.append(span.text());
-                        }
-                        lowPrice = sb.toString();
-                    }
-                    System.out.println("저가: " + lowPrice);
-
-
-                    // 11. 거래대금 (1,590,077 백만)
-                    String tradePrice = null;
-                    // table.no_info tbody tr:nth-of-type(2) td:nth-of-type(3) em span.blind
-                    Element tradePriceElement = doc.select("table.no_info tbody tr:nth-of-type(2) td:nth-of-type(3) em span.blind").first();
-                    if (tradePriceElement != null) {
-                        // '백만' 텍스트는 별도의 span에 있으므로 blind 값만 가져옵니다.
-                        // 그리고 필요하다면 뒤에 '백만'을 붙여줍니다.
-                        tradePrice = tradePriceElement.text().trim();
-                        // String tradePriceUnit = doc.select("table.no_info tbody tr:nth-of-type(2) td:nth-of-type(3) span.sptxt.sp_txt11").first().text().trim();
-                        // tradePrice = tradePrice + tradePriceUnit;
-                    }
-                    System.out.println("거래대금: " + tradePrice + " 백만"); // '백만'은 파싱 후 붙여주거나, parseTradeValue 함수에서 처리
-
-                    // 모든 파싱은 'tab_con1' div 안에서 이루어지도록 셀렉터 시작 부분을 한정합니다.
-                    Element tabCon1 = doc.selectFirst("div#tab_con1");
-
-                    if (tabCon1 == null) {
-                        System.out.println("투자정보 탭 (div#tab_con1)을 찾을 수 없습니다.");
-                        return;
+                    System.out.println("--- 파싱된 종목 데이터 ---");
+                    for (Map.Entry<String, String> entry : stockData.entrySet()) {
+                        System.out.println(entry.getKey() + ": " + entry.getValue());
                     }
 
-                    // 1. 시가총액 정보
-                    String marketCap = "";
-                    Element marketCapEm = tabCon1.selectFirst("table[summary='시가총액 정보'] em#_market_sum");
-                    if (marketCapEm != null) {
-                        // "416조 7,425"를 얻고, 공백을 제거하고 '조'를 '조 '로 유지하여 파싱합니다.
-                        // .text()로 가져온 후 불필요한 공백과 줄바꿈을 제거합니다.
-                        marketCap = marketCapEm.text().replaceAll("\\s+", " ").trim();
-                        // "조"와 숫자 사이에 공백이 남아있는 경우를 대비하여 추가 처리할 수 있습니다.
-                        marketCap = marketCap.replace("조 ", "조"); // 예: "416조 7,425" -> "416조7,425" (필요시)
-                        marketCap = marketCap + "억원"; // "억원"은 em 태그 밖에 있으므로 수동으로 추가
-                    }
-                    System.out.println("시가총액: " + marketCap);
 
-                    // 2. 시가총액 순위
-                    String marketCapRank = "";
-                    Element marketCapRankTd = tabCon1.selectFirst("table[summary='시가총액 정보'] th:has(a[href*='sise_market_sum.naver']) + td");
-                    if (marketCapRankTd != null) {
-                        marketCapRank = marketCapRankTd.text().trim();
-                    }
-                    System.out.println("시가총액 순위: " + marketCapRank);
 
-                    // 3. 상장주식수
-                    String listedSharesCount = "";
-                    Element listedSharesEm = tabCon1.selectFirst("table[summary='시가총액 정보'] th:contains(상장주식수) + td em");
-                    if (listedSharesEm != null) {
-                        listedSharesCount = listedSharesEm.text().trim();
-                    }
-                    System.out.println("상장주식수: " + listedSharesCount);
-
-                    // 4. 액면가 및 매매단위
-                    String parValue = "";
-                    String tradingUnit = "";
-                    Element parValueTradingUnitTd = tabCon1.selectFirst("table[summary='시가총액 정보'] th:contains(액면가) + td");
-                    if (parValueTradingUnitTd != null) {
-                        // 액면가
-                        Element parValueEm = parValueTradingUnitTd.selectFirst("em:nth-of-type(1)");
-                        if (parValueEm != null) {
-                            parValue = parValueEm.text().trim() + "원";
-                        }
-                        // 매매단위
-                        Element tradingUnitEm = parValueTradingUnitTd.selectFirst("em:nth-of-type(2)");
-                        if (tradingUnitEm != null) {
-                            tradingUnit = tradingUnitEm.text().trim() + "주";
-                        }
-                    }
-                    System.out.println("액면가: " + parValue);
-                    System.out.println("매매단위: " + tradingUnit);
-
-                    // --- 외국인 관련 정보는 div.gray로 마크되어 있어 이 섹션은 건너뜁니다. ---
-
-                    // 5. 투자의견 및 목표주가
-                    String investmentOpinion = "";
-                    String targetPrice = "";
-                    Element investmentOpinionTd = tabCon1.selectFirst("table[summary='투자의견 정보'] th:contains(투자의견) + td");
-                    if (investmentOpinionTd != null) {
-                        // 투자의견 (예: 4.00매수)
-                        // 'f_up' 클래스를 가진 span 바로 아래에 있는 em을 선택
-                        Element opinionEm = investmentOpinionTd.selectFirst("span.f_up em");
-                        if (opinionEm != null) {
-                            // opinionEm의 부모인 span.f_up의 텍스트 전체를 가져와야 "4.00매수"가 나옵니다.
-                            investmentOpinion = opinionEm.parent().text().trim();
-                        }
-
-                        // 목표주가 (<td> 내의 두 번째 <em> 태그를 선택)
-                        Element targetPriceEm = investmentOpinionTd.select("em").get(1); // 두 번째 em 태그
-                        targetPrice = targetPriceEm.text().trim();
-                    }
-                    System.out.println("투자의견: " + investmentOpinion);
-                    System.out.println("목표주가: " + targetPrice);
-
-                    // 6. 52주 최고/최저가
-                    String fiftyTwoWeekHigh = "";
-                    String fiftyTwoWeekLow = "";
-                    Element fiftyTwoWeekTd = tabCon1.selectFirst("table[summary='투자의견 정보'] th:contains(52주최고) + td");
-                    if (fiftyTwoWeekTd != null) {
-                        Elements priceEms = fiftyTwoWeekTd.select("em");
-                        if (priceEms.size() >= 1) {
-                            fiftyTwoWeekHigh = priceEms.get(0).text().trim();
-                        }
-                        if (priceEms.size() >= 2) {
-                            fiftyTwoWeekLow = priceEms.get(1).text().trim();
-                        }
-                    }
-                    System.out.println("52주 최고가: " + fiftyTwoWeekHigh);
-                    System.out.println("52주 최저가: " + fiftyTwoWeekLow);
-
-                    // 7. PER / EPS (현재)
-                    String currentPER = "";
-                    String currentEPS = "";
-                    Element perEpsTd = tabCon1.selectFirst("table[summary='PER/EPS 정보'] th:contains(PER) + td");
-                    if (perEpsTd != null) {
-                        currentPER = perEpsTd.selectFirst("em#_per").text().trim();
-                        currentEPS = perEpsTd.selectFirst("em#_eps").text().trim();
-                    }
-                    System.out.println("현재 PER: " + currentPER);
-                    System.out.println("현재 EPS: " + currentEPS);
-
-                    // 10. PBR / BPS
-                    String pbr = "";
-                    String bps = "";
-                    Element pbrBpsTd = tabCon1.selectFirst("table[summary='PER/EPS 정보'] th:contains(PBR) + td");
-                    if (pbrBpsTd != null) {
-                        pbr = pbrBpsTd.selectFirst("em#_pbr").text().trim();
-                        // PBR 옆의 BPS는 ID가 없으므로 두 번째 em 태그를 선택
-                        Elements pbrBpsEms = pbrBpsTd.select("em");
-                        if (pbrBpsEms.size() >= 2) {
-                            bps = pbrBpsEms.get(1).text().trim();
-                        }
-                    }
-                    System.out.println("PBR: " + pbr);
-                    System.out.println("BPS: " + bps);
-
-                    // 11. 배당수익률
-                    String dividendYield = "";
-                    Element dividendYieldTd = tabCon1.selectFirst("table[summary='PER/EPS 정보'] th:contains(배당수익률) + td");
-                    if (dividendYieldTd != null) {
-                        Element dividendYieldEm = dividendYieldTd.selectFirst("em#_dvr");
-                        if (dividendYieldEm != null) {
-                            dividendYield = dividendYieldEm.text().trim();
-                        }
-                    }
-                    System.out.println("배당수익률: " + dividendYield);
-
-                    // 12. 동일업종 PER
-                    String industryPER = "";
-                    Element industryPerTd = tabCon1.selectFirst("table[summary='동일업종 PER 정보'] th:contains(동일업종 PER) + td em");
-                    if (industryPerTd != null) {
-                        industryPER = industryPerTd.text().trim();
-                    }
-                    System.out.println("동일업종 PER: " + industryPER);
-
-                    // 13. 동일업종 등락률
-                    String industryFluctuationRate = "";
-                    Element industryFluctuationTd = tabCon1.selectFirst("table[summary='동일업종 PER 정보'] th:contains(동일업종 등락률) + td em");
-                    if (industryFluctuationTd != null) {
-                        industryFluctuationRate = industryFluctuationTd.text().trim();
-                    }
-                    System.out.println("동일업종 등락률: " + industryFluctuationRate);
+//                    StockPriceDto stockPriceDto = new StockPriceDto();
+//                    stockPriceDto.setStockCode(stockCode);
+//                    stockPriceDto.setStockNm(stockName);
+//                    stockPriceDto.setCurrentPrice(convertToInt(currentPrice));
+//                    stockPriceDto.setChangePrice(convertToInt(changePrice));
+//                    stockPriceDto.setChangeRatio(changeRatio);
+//                    stockPriceDto.setTradeVolume(convertToLong(tradeVolume));
+//                    stockPriceDto.setTradingValue(convertToLong(tradeValue));
+//                    stockPriceDto.setOpeningPrice(convertToInt(openingPrice));
+//                    stockPriceDto.setHighPrice(convertToInt(highPrice));
+//                    stockPriceDto.setLowPrice(convertToInt(lowPrice));
+//                    stockPriceDto.setEndingPrice(convertToInt(prevClosingPrice));
+//                    stockPriceDto.setMarketCap(marketCap);
+//                    stockPriceDto.setMarketCapRank(marketCapRank);
+//                    stockPriceDto.setListedSharesCount(convertToLong(listedSharesCount));
+//                    stockPriceDto.setParValue(convertToInt(parValue));
+//                    stockPriceDto.setTradingUnit(convertToInt(tradingUnit));
+//                    stockPriceDto.setInvestmentOpinion(investmentOpinion);
+//                    stockPriceDto.setTargetPrice(convertToInt(targetPrice));
+//                    stockPriceDto.setFiftyTwoWeekHigh(convertToInt(fiftyTwoWeekHigh));
+//                    stockPriceDto.setFiftyTwoWeekLow(convertToInt(fiftyTwoWeekLow));
+//                    stockPriceDto.setCurrentPer(currentPER);
+//                    stockPriceDto.setCurrentEps(convertToInt(currentEPS));
+//                    stockPriceDto.setPbr(pbr);
+//                    stockPriceDto.setBps(convertToInt(bps));
+//                    stockPriceDto.setDividendYield(dividendYield);
+//                    stockPriceDto.setIndustryPer(industryPER);
+//                    stockPriceDto.setIndustryFluctuationRate(industryFluctuationRate);
+//                    stockPriceDto.setStatusCode(statusCode);
+//
+//                    StockPrice entity = StockPrice.dtoToEntity(stockPriceDto);
+//                    stockPriceRepository.save(entity);
                 }
             } catch (Exception e) {
-                System.err.println("크롤링 중 에러 발생: " + currentUrl + " - " + e.getMessage());
+                StockPriceDto stockPriceDto = new StockPriceDto();
+                stockPriceDto.setErrorMessage(e.getMessage());
+
+                StockPrice entity = StockPrice.dtoToEntity(stockPriceDto);
+                stockPriceRepository.save(entity);
             }
         }
     }
+
+    /**
+     * 동종업종 비교 테이블에서 첫 번째 종목 (검색한 종목)의 정보를 파싱합니다.
+     * @param doc Jsoup Document 객체
+     * @param stockData 데이터를 저장할 Map
+     */
+    private static void parseComparativeTable(Document doc, Map<String, String> stockData) {
+        Element table = doc.selectFirst("table.tb_type1.tb_num[summary*='동종업종 비교']");
+
+        if (table == null) {
+            System.out.println("DEBUG: 동종업종 비교 테이블을 찾을 수 없습니다.");
+            return;
+        }
+
+        // 종목명과 코드 추출 (첫 번째 종목)
+        Element firstStockHeader = table.selectFirst("thead tr th[scope='col']");
+        if (firstStockHeader != null) {
+            Element link = firstStockHeader.selectFirst("a");
+            if (link != null) {
+                stockData.put("종목명", link.ownText().trim()); // 링크 자체 텍스트 (삼성전자)
+                Element codeEm = link.selectFirst("em");
+                if (codeEm != null) {
+                    stockData.put("종목코드", codeEm.text().trim()); // 005930
+                }
+            }
+        }
+
+        // 바디 데이터 추출 (첫 번째 종목의 데이터만)
+        Elements rows = table.select("tbody tr");
+
+        for (Element row : rows) {
+            Element itemHeader = row.selectFirst("th[scope='row']");
+            if (itemHeader == null) continue;
+
+            String itemName = itemHeader.selectFirst("span").text().trim();
+
+            // 첫 번째 <td>만 선택
+            Element firstCell = row.selectFirst("td");
+            if (firstCell == null) continue;
+
+            String value;
+
+            // 시가총액, 외국인비율, PER, PBR은 이 테이블에서 가져오지 않음 (아래 tab_con1에서 가져올 예정)
+            if (itemName.equals("시가총액(억)") || itemName.equals("외국인비율(%)") ||
+                    itemName.equals("PER(%)") || itemName.equals("PBR(배)")) {
+                continue; // 이 항목들은 건너뛰고 다음 테이블에서 가져올 것임
+            }
+
+            // '전일대비'와 '등락률' 항목 특수 처리
+            if (itemName.equals("전일대비") || itemName.equals("등락률")) {
+                Element emElement = firstCell.selectFirst("em");
+                if (emElement != null) {
+                    // '하향' 또는 '상향' 텍스트를 '하락' 또는 '상승'으로 변경하여 포함
+                    value = emElement.text().trim()
+                            .replace("하향", "하락")
+                            .replace("상향", "상승");
+                } else {
+                    value = firstCell.text().trim();
+                }
+            } else {
+                // 그 외의 항목들은 td의 직접적인 텍스트를 가져옴
+                value = firstCell.text().trim();
+            }
+
+            stockData.put(itemName, value);
+        }
+    }
+
+    /**
+     * tab_con1 영역에서 메인 종목의 추가 상세 정보를 파싱합니다.
+     * @param doc Jsoup Document 객체
+     * @param stockData 데이터를 저장할 Map
+     */
+    private static void parseTabCon1Section(Document doc, Map<String, String> stockData) {
+        Element tabCon1 = doc.selectFirst("div#tab_con1");
+        if (tabCon1 == null) {
+            System.out.println("DEBUG: tab_con1 섹션을 찾을 수 없습니다.");
+            return;
+        }
+
+        // 1. 시가총액 정보 테이블
+        Element marketSumTable = tabCon1.selectFirst("table[summary='시가총액 정보']");
+        if (marketSumTable != null) {
+            // 시가총액
+            Element marketSumEm = marketSumTable.selectFirst("th:contains(시가총액) + td em");
+            if (marketSumEm != null) {
+                stockData.put("시가총액", cleanAndCombineText(marketSumEm.parent())); // '억원'까지 포함
+            }
+            // 시가총액순위
+            Element rankTd = marketSumTable.selectFirst("th:contains(시가총액순위) + td");
+            if (rankTd != null) {
+                stockData.put("시가총액순위", rankTd.text().trim());
+            }
+            // 상장주식수
+            Element listedSharesEm = marketSumTable.selectFirst("th:contains(상장주식수) + td em");
+            if (listedSharesEm != null) {
+                stockData.put("상장주식수", listedSharesEm.text().trim());
+            }
+            // 액면가 | 매매단위
+            Element faceValueTd = marketSumTable.selectFirst("th:contains(액면가) + td");
+            if (faceValueTd != null) {
+                // '100원 l 1주' 처럼 분리하여 저장하거나 통째로 저장
+                String fullText = faceValueTd.text().trim();
+                // 정규 표현식을 사용하여 액면가와 매매단위 분리
+                Pattern pattern = Pattern.compile("(.+원)\\s*l\\s*(.+주)");
+                Matcher matcher = pattern.matcher(fullText);
+                if (matcher.find()) {
+                    stockData.put("액면가", matcher.group(1));
+                    stockData.put("매매단위", matcher.group(2));
+                } else {
+                    stockData.put("액면가/매매단위", fullText); // 분리 실패 시 전체 저장
+                }
+            }
+        }
+
+        // 2. 투자의견 및 52주 최고/최저 테이블 (class가 gray가 아닌 테이블)
+        // div.first 아래의 테이블은 이미 처리했고, class="gray"는 스킵할 것이므로
+        // 그 다음 div 바로 아래의 table을 찾음
+        Elements opinionTables = tabCon1.select("div:not(.gray) > table[summary='투자의견 정보']");
+        if (!opinionTables.isEmpty()) {
+            Element opinionTable = opinionTables.first(); // 첫 번째 테이블 사용
+
+            // 투자의견 | 목표주가
+            Element opinionTd = opinionTable.selectFirst("th:contains(투자의견) + td");
+            if (opinionTd != null) {
+                String fullText = opinionTd.text().trim();
+                // '4.00매수 l 76,333' 에서 투자의견과 목표주가 분리
+                Pattern pattern = Pattern.compile("(.+?)\\s*l\\s*(.+)");
+                Matcher matcher = pattern.matcher(fullText);
+                if (matcher.find()) {
+                    stockData.put("투자의견", matcher.group(1));
+                    stockData.put("목표주가", matcher.group(2));
+                } else {
+                    stockData.put("투자의견/목표주가", fullText);
+                }
+            }
+
+            // 52주최고 | 최저
+            Element fiftyTwoWeekTd = opinionTable.selectFirst("th:contains(52주최고) + td");
+            if (fiftyTwoWeekTd != null) {
+                String fullText = fiftyTwoWeekTd.text().trim();
+                // '86,100 l 49,900' 에서 최고가와 최저가 분리
+                Pattern pattern = Pattern.compile("(.+?)\\s*l\\s*(.+)");
+                Matcher matcher = pattern.matcher(fullText);
+                if (matcher.find()) {
+                    stockData.put("52주최고", matcher.group(1));
+                    stockData.put("52주최저", matcher.group(2));
+                } else {
+                    stockData.put("52주최고/최저", fullText);
+                }
+            }
+        }
+
+        // 3. PER/EPS 정보 테이블
+        Element perEpsTable = tabCon1.selectFirst("table.per_table[summary='PER/EPS 정보']");
+        if (perEpsTable != null) {
+            // PER | EPS (현재)
+            Element perEpsTd = perEpsTable.selectFirst("th:contains(PER) + td");
+            if (perEpsTd != null) {
+                String fullText = perEpsTd.text().trim();
+                Pattern pattern = Pattern.compile("(.+?배)\\s*l\\s*(.+원)");
+                Matcher matcher = pattern.matcher(fullText);
+                if (matcher.find()) {
+                    stockData.put("PER", matcher.group(1));
+                    stockData.put("EPS", matcher.group(2));
+                } else {
+                    stockData.put("PER/EPS", fullText);
+                }
+            }
+            // PBR | BPS
+            Element pbrBpsTd = perEpsTable.selectFirst("th:contains(PBR) + td");
+            if (pbrBpsTd != null) {
+                String fullText = pbrBpsTd.text().trim();
+                Pattern pattern = Pattern.compile("(.+?배)\\s*l\\s*(.+원)");
+                Matcher matcher = pattern.matcher(fullText);
+                if (matcher.find()) {
+                    stockData.put("PBR", matcher.group(1));
+                    stockData.put("BPS", matcher.group(2));
+                } else {
+                    stockData.put("PBR/BPS", fullText);
+                }
+            }
+            // 배당수익률
+            Element dividendYieldTd = perEpsTable.selectFirst("th:contains(배당수익률) + td em");
+            if (dividendYieldTd != null) {
+                stockData.put("배당수익률", dividendYieldTd.text().trim());
+            }
+        }
+    }
+
+    /**
+     * 주어진 요소의 모든 자식 텍스트 노드와 자식 요소의 텍스트를 결합하여 반환합니다.
+     * 불필요한 공백을 제거하고, 특정 태그(예: <br>)는 제외합니다.
+     * @param element 텍스트를 추출할 부모 Element
+     * @return 결합된 텍스트
+     */
+    private static String cleanAndCombineText(Element element) {
+        if (element == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (org.jsoup.nodes.Node node : element.childNodes()) {
+            if (node instanceof org.jsoup.nodes.TextNode) {
+                sb.append(((org.jsoup.nodes.TextNode) node).text());
+            } else if (node instanceof Element) {
+                Element childElement = (Element) node;
+                // <br> 태그 등은 스킵
+                if (!childElement.tagName().equals("br")) {
+                    sb.append(cleanAndCombineText(childElement)); // 재귀적으로 자식 요소의 텍스트도 가져옴
+                }
+            }
+        }
+        // 여러 공백을 하나의 공백으로 줄이고, 앞뒤 공백 제거
+        return sb.toString().replaceAll("\\s+", " ").trim();
+    }
+
+    private int convertToInt(String str) {
+
+        String cleanStr = str.replaceAll("^[0-9]+", "").trim();
+        return Integer.parseInt(cleanStr);
+    }
+
+    private Long convertToLong(String str) {
+        String cleanStr = str.replaceAll("^[0-9]+", "").trim();
+        return Long.parseLong(cleanStr);
+    }
+
+    // --- 헬퍼 함수: 자식 span 태그들의 텍스트를 합쳐서 반환 ---
+    private static String getCombinedSpanText(Element parentElement) {
+        if (parentElement == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        // 모든 자식 노드를 순회하여 텍스트 노드나 span 태그의 텍스트를 가져옴
+        for (org.jsoup.nodes.Node node : parentElement.childNodes()) {
+            if (node instanceof org.jsoup.nodes.TextNode) {
+                String text = ((org.jsoup.nodes.TextNode) node).text().trim();
+                if (!text.isEmpty()) {
+                    sb.append(text);
+                }
+            } else if (node instanceof Element) {
+                Element childElement = (Element) node;
+                // ico 클래스는 '하락', '상승' 같은 아이콘 텍스트이므로 제외하거나 필요에 따라 별도 처리
+                // 여기서는 숫자 관련 span만 포함하도록 필터링
+                if (childElement.tagName().equals("span") && !childElement.hasClass("ico")) {
+                    sb.append(childElement.text().trim());
+                }
+            }
+        }
+        return sb.toString().replaceAll("\\s+", ""); // 모든 공백 제거
+    }
+
 
     private String getDomainFromUrl(String urlString) {
         try {

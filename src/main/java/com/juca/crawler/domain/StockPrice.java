@@ -5,10 +5,7 @@ import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Getter
@@ -31,13 +28,13 @@ public class StockPrice extends BaseTimeEntity {
     private Integer currentPrice;
 
     @Column(name = "change_price", nullable = false)
-    private Integer change;
+    private Integer changePrice;
 
     @Column(name = "change_ratio", nullable = false, precision = 20, scale = 6)
-    private BigDecimal changeRate;
+    private String changeRatio;
 
     @Column(name = "trade_volume", nullable = false)
-    private Long volume;
+    private Long tradeVolume;
 
     @Column(name = "trading_value", nullable = false)
     private Long tradingValue;
@@ -112,8 +109,8 @@ public class StockPrice extends BaseTimeEntity {
     private LocalDateTime collectedAt;
 
     @Builder
-    public StockPrice(String stockCode, String stockNm, Integer currentPrice, Integer change,
-                      BigDecimal changeRate, Long volume, Long tradingValue, Integer openingPrice, Integer highPrice,
+    public StockPrice(String stockCode, String stockNm, Integer currentPrice, Integer changePrice,
+                      String changeRatio, Long tradeVolume, Long tradingValue, Integer openingPrice, Integer highPrice,
                       Integer lowPrice, Integer endingPrice, String marketCap, String marketCapRank, Long listedSharesCount, Integer parValue,
                       Integer tradingUnit, String investmentOpinion, Integer targetPrice, Integer fiftyTwoWeekHigh, Integer fiftyTwoWeekLow,
                       String currentPer, Integer currentEps, String pbr, Integer bps, String dividendYield, String industryPer, String industryFluctuationRate,
@@ -121,9 +118,9 @@ public class StockPrice extends BaseTimeEntity {
         this.stockCode = stockCode;
         this.stockNm = stockNm;
         this.currentPrice = currentPrice;
-        this.change = change;
-        this.changeRate = changeRate;
-        this.volume = volume;
+        this.changePrice = changePrice;
+        this.changeRatio = changeRatio;
+        this.tradeVolume = tradeVolume;
         this.tradingValue = tradingValue;
         this.openingPrice = openingPrice;
         this.highPrice = highPrice;
@@ -155,9 +152,9 @@ public class StockPrice extends BaseTimeEntity {
                 .stockCode(dto.getStockCode())
                 .stockNm(dto.getStockNm())
                 .currentPrice(dto.getCurrentPrice())
-                .change(dto.getChangePrice())
-                .changeRate(dto.getChangeRatio())
-                .volume(dto.getTradeVolume())
+                .changePrice(dto.getChangePrice())
+                .changeRatio(dto.getChangeRatio())
+                .tradeVolume(dto.getTradeVolume())
                 .tradingValue(dto.getTradingValue())
                 .openingPrice(dto.getOpeningPrice())
                 .highPrice(dto.getHighPrice())

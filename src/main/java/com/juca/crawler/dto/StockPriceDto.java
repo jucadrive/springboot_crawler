@@ -20,7 +20,7 @@ public class StockPriceDto {
     private String stockNm;
     private Integer currentPrice;
     private Integer changePrice;
-    private BigDecimal changeRatio;
+    private String changeRatio;
     private Long tradeVolume;
     private Long tradingValue;
     private Integer openingPrice;
