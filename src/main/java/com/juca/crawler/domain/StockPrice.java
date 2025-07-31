@@ -179,7 +179,7 @@ public class StockPrice extends BaseTimeEntity {
                 .lowPrice(dto.getLowPrice())
                 .endingPrice(dto.getEndingPrice())
                 .marketCap(dto.getMarketCap())
-                .marketCapRank(dto.getMarketCap())
+                .marketCapRank(dto.getMarketCapRank())
                 .listedSharesCount(dto.getListedSharesCount())
                 .parValue(dto.getParValue())
                 .tradingUnit(dto.getTradingUnit())
