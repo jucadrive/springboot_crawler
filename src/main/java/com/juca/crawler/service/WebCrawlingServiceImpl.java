@@ -16,12 +16,17 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.parser.Parser;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -63,17 +68,13 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
             // 최대 깊이 도달 체크
             if (currentDepth > maxDepth) {
-                System.out.println("최대 크롤링 깊이 도달: " + currentUrl);
                 continue;   // 다음 큐 아이템으로 넘어감
             }
 
             // DB에 이미 존재하는지 확인
             if (crawledPageRepository.findByUrl(currentUrl).isPresent()) {
-                System.out.println("이미 크롤링한 페이지: " + currentUrl);
                 continue;
             }
-
-            System.out.println("크롤링 시작: " + currentUrl + " (깊이: " + currentDepth + ")");
 
             CrawledPageDto crawledPageDto = new CrawledPageDto();
             crawledPageDto.setUrl(currentUrl);
@@ -122,7 +123,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 } else {
                     String errorMessage = "Non-HTML content or non-200 status: " + statusCode + ", Type: " + contentType;
                     crawledPageDto.setErrorMessage(errorMessage);
-                    System.err.println("  " + errorMessage + " for URL: " + currentUrl);
                 }
 
                 // 부모 페이지 엔티티 조회 (있을 경우)
@@ -155,7 +155,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
                         // ★★★ 현재 페이지에서 이미 추출된 동일 URL이라면 스킵 ★★★
                         if (!extractedLinksOnCurrentPage.add(absUrl)) {
-                            System.out.println("  [중복 링크 스킵] 현재 페이지에서 이미 추출된 링크: " + absUrl);
                             continue;
                         }
 
@@ -184,20 +183,16 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
             } catch (Exception e) {
                 // 예외 발생 시 crawledPageDto에 에러 메시지 설정
                 crawledPageDto.setErrorMessage(e.getMessage());
-                System.err.println("크롤링 중 예외 발생: " + currentUrl + " - " + e.getMessage());
             } finally {
                 // ★★★ 이 부분이 중요! 예외 발생 여부와 관계없이 딜레이를 적용합니다. ★★★
                 try {
                     long delay = 1000 + (long) (Math.random() * 3000); // 1초 ~ 4초 랜덤 딜레이
-                    System.out.println("딜레이 중: " + delay + "ms");
                     Thread.sleep(delay);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt(); // 인터럽트 상태 복원
-                    System.err.println("딜레이 중 인터럽트 발생: " + ie.getMessage());
                 }
             }
         }
-        System.out.println("크롤링 완료!");
     }
 
     @Override
@@ -265,6 +260,108 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 stockPriceRepository.save(entity);
             }
         }
+    }
+
+    /**
+     *
+     * @param url 네이버 뉴스 URL
+     * @param maxDepth 크롤링 깊이
+     */
+    @Override
+    public void naverNewsCrawling(String url, int maxDepth) {
+        Set<String> visitedArticle = new HashSet<>();
+        String htmlContent = null;
+        Document doc = null;
+        int statusCode = 0;
+        String contentType = null;
+
+        try {
+            Connection.Response response = Jsoup.connect(url).userAgent(USER_AGENT)
+                    .referrer(REFERRER)
+                    .timeout(TIME_OUT)
+                    .ignoreHttpErrors(true)
+                    .ignoreContentType(true)
+                    .execute();
+
+            statusCode = response.statusCode();
+            contentType = response.contentType();
+            System.out.println("타입: " + contentType);
+
+            // Content-Type이 text/html이고 statusCode = 200일 경우에만
+            if (contentType != null && contentType.startsWith("text/html") && statusCode == 200) {
+                System.out.println("if 문 안에 들어옴");
+                htmlContent = response.body();
+                doc = Jsoup.parse(htmlContent);
+
+                Elements articleLinks = doc.select("a._cds_link._editn_link");
+
+                for (Element link : articleLinks) {
+                    String articleUrl = link.attr("href");
+
+                    if (!visitedArticle.contains(articleUrl) && articleUrl.startsWith("http")) {
+                        crawlArticle(articleUrl);
+                        visitedArticle.add(articleUrl);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void crawlArticle(String articleUrl) throws IOException {
+
+        try {
+            long delay = 10000 + (long) (Math.random() * 30000); // 10초 ~ 40초 랜덤 딜레이
+            Thread.sleep(delay);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt(); // 인터럽트 상태 복원
+        }
+
+        String htmlContent = null;
+        Document articleDoc = null;
+
+        Connection.Response response = Jsoup.connect(articleUrl).userAgent(USER_AGENT)
+                .referrer("https://news.naver.com/")
+                .timeout(TIME_OUT)
+                .ignoreHttpErrors(true)
+                .ignoreContentType(true)
+                .execute();
+
+        htmlContent = response.body();
+        articleDoc = Jsoup.parse(htmlContent);
+
+        String media = null;
+        String title = null;
+        String content = null;
+        String dateStamp = null;
+
+        Element mediaElement = articleDoc.select("a.media_end_head_top_logo img").first();
+        Element titleElement = articleDoc.select("h2#title_area span").first();
+        Element dateElement = articleDoc.select("span.media_end_head_info_datestamp_time").first();
+        Element contentElement = articleDoc.select("div#newsct_article").first();
+
+        if (mediaElement != null) {
+            media = mediaElement.attr("title");
+        }
+
+        if (titleElement != null) {
+            title = titleElement.text();
+        }
+
+        if (contentElement != null) {
+            content = contentElement.text();
+        }
+
+        if (dateElement != null) {
+            dateStamp = dateElement.attr("data-date-time");
+        }
+
+        System.out.println("언론사: " + media);
+        System.out.println("제목: " + title);
+        System.out.println("내용: " + content);
+        System.out.println("날짜: " + dateStamp);
     }
 
     /**
