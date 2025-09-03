@@ -19,7 +19,6 @@ public class WebCrawlerController {
 
     @PostMapping("/news")
     public void naverNewsCrawler() {
-        System.out.println("요청 들어옴");
         webCrawlingService.naverNewsCrawling(url, 0);
     }
 }

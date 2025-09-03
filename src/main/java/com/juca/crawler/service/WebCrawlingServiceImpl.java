@@ -1,18 +1,14 @@
 package com.juca.crawler.service;
 
-import com.juca.crawler.domain.CrawledPage;
-import com.juca.crawler.domain.ExtractedLink;
-import com.juca.crawler.domain.StockPrice;
-import com.juca.crawler.dto.CrawledPageDto;
-import com.juca.crawler.dto.ExtractedLinkDto;
-import com.juca.crawler.dto.StockPriceDto;
-import com.juca.crawler.repository.CrawledPageRepository;
-import com.juca.crawler.repository.ExtractedLinkRepository;
-import com.juca.crawler.repository.StockPriceRepository;
+import com.juca.crawler.domain.*;
+import com.juca.crawler.dto.*;
+import com.juca.crawler.repository.*;
+import com.juca.util.LogUtil;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Connection;
+import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -27,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -39,9 +36,16 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
     private static final int TIME_OUT = 10000;
     private static final String REFERRER = "https://www.naver.com";
 
+    private static final String CNN_REFERRER = "https://edition.cnn.com/";
+    private static final Random random = new Random();  // 랜덤 딜레이
+    private static final long MIN_DELAY_MS = 1000; // 최소 1초
+    private static final long MAX_DELAY_MS = 5000; // 최대 5초
+
     private final CrawledPageRepository crawledPageRepository;
     private final ExtractedLinkRepository extractedLinkRepository;
     private final StockPriceRepository stockPriceRepository;
+    private final CrawledNewsArticleRepository crawledNewsArticleRepository;
+    private final CnnArticleRepository cnnArticleRepository;
 
     // 크롤링 작업 단위를 위한 내부 클래스
     @Getter
@@ -270,10 +274,10 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
     @Override
     public void naverNewsCrawling(String url, int maxDepth) {
         Set<String> visitedArticle = new HashSet<>();
-        String htmlContent = null;
-        Document doc = null;
-        int statusCode = 0;
-        String contentType = null;
+        String htmlContent;
+        Document doc;
+        int statusCode;
+        String contentType;
 
         try {
             Connection.Response response = Jsoup.connect(url).userAgent(USER_AGENT)
@@ -285,20 +289,22 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
             statusCode = response.statusCode();
             contentType = response.contentType();
-            System.out.println("타입: " + contentType);
 
             // Content-Type이 text/html이고 statusCode = 200일 경우에만
             if (contentType != null && contentType.startsWith("text/html") && statusCode == 200) {
-                System.out.println("if 문 안에 들어옴");
                 htmlContent = response.body();
                 doc = Jsoup.parse(htmlContent);
 
-                Elements articleLinks = doc.select("a._cds_link._editn_link");
+                Elements articleLinks = doc.select("a._NLOG_IMPRESSION");
 
                 for (Element link : articleLinks) {
                     String articleUrl = link.attr("href");
 
-                    if (!visitedArticle.contains(articleUrl) && articleUrl.startsWith("http")) {
+                    if (visitedArticle.contains(articleUrl)) {
+                        continue;
+                    }
+
+                    if (articleUrl.startsWith("http")) {
                         crawlArticle(articleUrl);
                         visitedArticle.add(articleUrl);
                     }
@@ -312,6 +318,9 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     private void crawlArticle(String articleUrl) throws IOException {
 
+        CrawledNewsArticleDto dto = new CrawledNewsArticleDto();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
         try {
             long delay = 10000 + (long) (Math.random() * 30000); // 10초 ~ 40초 랜덤 딜레이
             Thread.sleep(delay);
@@ -319,8 +328,8 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
             Thread.currentThread().interrupt(); // 인터럽트 상태 복원
         }
 
-        String htmlContent = null;
-        Document articleDoc = null;
+        String htmlContent;
+        Document articleDoc;
 
         Connection.Response response = Jsoup.connect(articleUrl).userAgent(USER_AGENT)
                 .referrer("https://news.naver.com/")
@@ -334,13 +343,15 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
         String media = null;
         String title = null;
-        String content = null;
         String dateStamp = null;
+        String author = null;
+        String category = null;
 
         Element mediaElement = articleDoc.select("a.media_end_head_top_logo img").first();
         Element titleElement = articleDoc.select("h2#title_area span").first();
         Element dateElement = articleDoc.select("span.media_end_head_info_datestamp_time").first();
-        Element contentElement = articleDoc.select("div#newsct_article").first();
+        Element authorElement = articleDoc.select("em.media_end_head_journalist_name").first();
+        Element categoryElement = articleDoc.select("li.Nlist_item._LNB_ITEM.is_active").first();
 
         if (mediaElement != null) {
             media = mediaElement.attr("title");
@@ -350,18 +361,28 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
             title = titleElement.text();
         }
 
-        if (contentElement != null) {
-            content = contentElement.text();
-        }
-
         if (dateElement != null) {
             dateStamp = dateElement.attr("data-date-time");
         }
 
-        System.out.println("언론사: " + media);
-        System.out.println("제목: " + title);
-        System.out.println("내용: " + content);
-        System.out.println("날짜: " + dateStamp);
+        if (authorElement != null) {
+            author = authorElement.text();
+        }
+
+        if (categoryElement != null) {
+            category = categoryElement.text();
+        }
+
+        dto.setArticleUrl(articleUrl);
+        dto.setMedia(media);
+        dto.setCategory(category);
+        dto.setTitle(title);
+        dto.setHtmlContent(htmlContent);
+        dto.setAuthor(author);
+        if (dateStamp != null) dto.setPublishedAt(LocalDateTime.parse(dateStamp, formatter));
+        dto.setCrawledAt(LocalDateTime.now());
+
+        crawledNewsArticleRepository.save(CrawledNewsArticle.dtoToEntity(dto));
     }
 
     /**
@@ -745,5 +766,188 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         if (url.matches(".*\\.(jpg|jpeg|png|gif|bmp|svg)$")) return "image";
         if (url.matches(".*\\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$")) return "document";
         return "external";
+    }
+
+    // CNN 기사 크롤링 진입점 메서드
+    @Override
+    public void articleCrawling(String startUrl, int maxDepth) {
+        Queue<String> articleUrlsToCrawl = new LinkedList<>();
+        Set<String> visitedArticleUrls = new HashSet<>();
+
+        collectArticleUrlsFromMainPage(startUrl, articleUrlsToCrawl, visitedArticleUrls);
+
+        crawlAndSaveArticleDetails(articleUrlsToCrawl, visitedArticleUrls);
+    }
+
+    /**
+     * 1단계: CNN 메인 페이지에서 기사 링크들을 수집하여 큐에 추가합니다.
+     *
+     * @param mainPageUrl        크롤링을 시작할 메인 페이지 URL
+     * @param articleUrlsToCrawl 기사 URL을 담을 큐
+     * @param visitedArticleUrls 방문했거나 방문 예정인 기사 URL을 기록할 Set (중복 방지용)
+     */
+    private void collectArticleUrlsFromMainPage(String mainPageUrl,
+                                                Queue<String> articleUrlsToCrawl,
+                                                Set<String> visitedArticleUrls) {
+        Document mainPageDoc = null;
+        try {
+            Connection.Response response = Jsoup.connect(mainPageUrl)
+                    .userAgent(USER_AGENT)
+                    .referrer(REFERRER)
+                    .timeout(TIME_OUT)
+                    .ignoreContentType(true)
+                    .ignoreHttpErrors(true)
+                    .execute();
+
+            int statusCode = response.statusCode();
+            String contentType = response.contentType();
+
+            // HTTP 200 ok인 경우에만 파싱
+            if (statusCode == 200 && contentType != null && contentType.startsWith("text/html")) {
+                mainPageDoc = response.parse();
+
+                Elements linkElements = mainPageDoc.select("a.container__link.container__link--type-article[href]");
+                for (Element linkElement : linkElements) {
+                    String absUrl = linkElement.attr("abs:href");
+
+                    // 유효하지 않은 링크 스킵 (mailto, tel, javascript 등)
+                    if (absUrl.isEmpty() || absUrl.startsWith("#") || absUrl.startsWith("mailto:") || absUrl.startsWith("tel:") || absUrl.startsWith("javascript:")) {
+                        continue;
+                    }
+
+                    // CNN 기사 URL 패턴 필터링 (날짜 패턴 포함)
+                    // 예: https://edition.cnn.com/2025/08/01/politics/some-article-title/index.html
+                    if (absUrl.matches(".*cnn\\.com/\\d{4}/\\d{2}/\\d{2}/.*")) {
+                        // 중복 체크: 이미 큐에 있거나 처리된 URL인지 확인
+                        if (visitedArticleUrls.add(absUrl)) { // add()는 추가 성공 시 true 반환 (즉, 이전에 없었다는 뜻)
+                            articleUrlsToCrawl.add(absUrl);
+                        }
+                    }
+                }
+            } else {
+                LogUtil.logError("메인 페이지 접속 실패 또는 HTML 아님: " + mainPageUrl + " - Status: " + statusCode + ", Content-Type: " + contentType, null);
+            }
+        } catch (Exception e) {
+            LogUtil.logError("메인 페이지 크롤링 중 알 수 없는 오류: " + mainPageUrl + " - " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 2단계: 수집된 기사 URL 큐를 순회하며 각 기사 본문을 크롤링하고 DB에 저장합니다.
+     *
+     * @param articleUrlsToCrawl 기사 URL을 담은 큐
+     * @param visitedArticleUrls 방문했거나 방문 예정인 기사 URL을 기록할 Set (여기서는 주로 로깅/확인용)
+     */
+    private void crawlAndSaveArticleDetails(Queue<String> articleUrlsToCrawl,
+                                            Set<String> visitedArticleUrls) {
+        while (!articleUrlsToCrawl.isEmpty()) {
+            String currentArticleUrl = articleUrlsToCrawl.poll();
+
+            if (cnnArticleRepository.findByArticleUrl(currentArticleUrl).isPresent()) {
+                continue;
+            }
+
+            // 랜덤 딜레이 적용
+            try {
+                long delay = MIN_DELAY_MS + random.nextInt((int) (MAX_DELAY_MS - MIN_DELAY_MS + 1));
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LogUtil.logError("크롤링 딜레이 중 인터럽트 발생: " + e.getMessage(), e);
+                return;
+            }
+
+            CnnArticleDto articleDto = new CnnArticleDto();
+            articleDto.setArticleUrl(currentArticleUrl);
+
+            try {
+                Connection.Response response = Jsoup.connect(currentArticleUrl)
+                        .userAgent(USER_AGENT)
+                        .referrer(CNN_REFERRER)
+                        .timeout(TIME_OUT)
+                        .ignoreHttpErrors(true)
+                        .ignoreContentType(true)
+                        .execute();
+
+                int statusCode = response.statusCode();
+                String contentType = response.contentType();
+                articleDto.setStatusCode(statusCode);
+
+                if (statusCode == 200 && contentType != null && contentType.startsWith("text/html")) {
+                    Document articleDoc = response.parse();
+                    // ----------------------------------------------------
+                    // 기사 데이터 파싱 및 추출 (정확한 셀렉터 확인 필요)
+                    // ----------------------------------------------------
+                    String title = null;
+                    String content = "";
+                    String author = null;
+                    LocalDateTime publishedAt = null;
+
+                    Element titleElement = articleDoc.selectFirst("h1.headline__text");
+                    if (titleElement != null) {
+                        title = titleElement.text().trim();
+                    }
+
+                    StringBuilder sb = new StringBuilder();
+                    Elements contentElements = articleDoc.select("div.article__content > p[data-component-name='paragraph']");
+                    for (Element contentElement : contentElements) {
+                        String paragraphText = contentElement.text().trim();
+                        if (!paragraphText.isEmpty()) {
+                            sb.append(paragraphText).append("\n\n");
+                        }
+                    }
+                    content = sb.toString().trim();
+
+                    Element authorElement = articleDoc.selectFirst("span.byline__name");
+                    if (authorElement != null) {
+                        author = authorElement.ownText().trim();
+                    }
+
+                    Element publishedAtElement = articleDoc.selectFirst("div.timestamp__published");
+                    if (publishedAtElement != null) {
+                        String cleanedDateTime = publishedAtElement.text().replace("PUBLISHED", "").replace(" ET", "").trim();
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM d, yyyy, h:mm a", Locale.ENGLISH);
+
+                        try {
+                            // 파싱된 결과를 LocalDateTime으로 변환
+                            publishedAt = LocalDateTime.parse(cleanedDateTime, formatter);
+                        } catch (DateTimeParseException e) {
+                            publishedAt = LocalDateTime.now();
+                            LogUtil.logError("날짜/시간 파싱 오류: " + currentArticleUrl + " - " + e.getMessage() + " (Original: " + publishedAtElement.text() + ")", e);
+                        }
+                    }
+
+                    articleDto.setTitle(title);
+                    if (content == null) {
+                        articleDto.setContent("");
+                    } else {
+                        articleDto.setContent(content);
+                    }
+                    articleDto.setAuthor(author);
+                    articleDto.setErrorMessage(null);
+                    articleDto.setCrawledAt(LocalDateTime.now());
+                    articleDto.setPublishedAt(publishedAt);
+
+                    cnnArticleRepository.save(CnnArticle.toEntity(articleDto));
+
+                } else {
+                    articleDto.setErrorMessage("HTTP Error or Not HTML: Status=" + statusCode + ", Content-Type=" + contentType);
+                    articleDto.setCrawledAt(LocalDateTime.now());
+                    LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - " + articleDto.getErrorMessage(), null);
+                }
+            } catch (HttpStatusException e) {
+                LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - HTTP 오류: " + e.getStatusCode(), e);
+                // HTTP 상태 코드 에러 (404, 500 등)
+                articleDto.setErrorMessage("HTTP Error: " + e.getStatusCode() + " - " + e.getMessage());
+                articleDto.setStatusCode(e.getStatusCode());
+                articleDto.setCrawledAt(LocalDateTime.now());
+            } catch (Exception e) {
+                LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - 알 수 없는 오류: " + e.getMessage(), e);
+                // 기타 모든 예외 (네트워크 오류, Jsoup 파싱 오류 등)
+                articleDto.setErrorMessage("Crawler Exception: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+                articleDto.setStatusCode(-1); // 또는 적절한 에러 코드
+                articleDto.setCrawledAt(LocalDateTime.now());
+            }
+        }
     }
 }

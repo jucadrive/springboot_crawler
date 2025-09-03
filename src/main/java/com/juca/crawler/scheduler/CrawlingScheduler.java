@@ -1,6 +1,7 @@
 package com.juca.crawler.scheduler;
 
 import com.juca.crawler.service.WebCrawlingService;
+import com.juca.util.LogUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,6 +16,24 @@ public class CrawlingScheduler {
 
     @Value("${crawler.base_stock_price_url}")
     String baseStockPriceUrl;
+
+    @Value("${crawler.naver_politics_news_url}")
+    String politicsUrl;
+
+    @Value("${crawler.naver_economy_news_url}")
+    String economyUrl;
+
+    @Value("${crawler.naver_society_news_url}")
+    String societyUrl;
+
+    @Value("${crawler.naver_life_news_url}")
+    String lifeUrl;
+
+    @Value("${crawler.naver_world_news_url}")
+    String worldUrl;
+
+    @Value("${crawler.naver_science_news_url}")
+    String scienceUrl;
 
     @Value("${crawler.max_depth}")
     int maxDepth;
@@ -56,5 +75,21 @@ public class CrawlingScheduler {
     public void startFinanceCrawling3() {
         String url = baseStockPriceUrl + "005380";
         webCrawlingService.stockPriceCrawling(url, maxDepth);
+    }
+
+    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(30000, 60000)}") // 5분 ~ 1시간 사이 랜덤 딜레이
+    public void startArticleCrawling() {
+        String schedulerName = "CNN Article Crawler Scheduler";
+        String methodName = "startArticleCrawling";
+
+        LogUtil.logSchedulerStart(schedulerName, methodName); // 스케줄러 시작 로그
+
+        try {
+            webCrawlingService.articleCrawling(baseArticleUrl, 0);
+            LogUtil.logSchedulerCompletion(schedulerName, methodName, "기사 크롤링 작업 성공적으로 완료."); // 완료 로그
+        } catch (Exception e) {
+            // 스케줄러 실행 중 최상위 예외 처리
+            LogUtil.logSchedulerException(schedulerName, methodName, e, "기사 크롤링 작업 중 예상치 못한 오류 발생."); // 예외 로그
+        }
     }
 }
