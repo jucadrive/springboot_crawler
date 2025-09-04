@@ -1,4 +1,4 @@
-package com.juca.util; // 패키지 경로에 맞게 수정
+package com.juca.crawler.util; // 패키지 경로에 맞게 수정
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,4 +1,4 @@
-package com.juca.util; // 패키지 경로를 프로젝트에 맞게 수정해주세요.
+package com.juca.crawler.util; // 패키지 경로를 프로젝트에 맞게 수정해주세요.
 
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;

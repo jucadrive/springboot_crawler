@@ -33,6 +33,9 @@ public class CrawledNewsArticle {
     @Column(name = "title", nullable = false)
     private String title;
 
+    @Column(name = "article", nullable = false, columnDefinition = "Text")
+    private String article;
+
     @Column(name = "html_content", nullable = false, columnDefinition = "LongText")
     private String htmlContent;
 
@@ -46,12 +49,13 @@ public class CrawledNewsArticle {
     private LocalDateTime crawledAt;
 
     @Builder
-    public CrawledNewsArticle(String articleUrl, String media, String category, String title, String htmlContent,
-                              String author, LocalDateTime publishedAt, LocalDateTime crawledAt) {
+    public CrawledNewsArticle(String articleUrl, String media, String category, String title, String article,
+                              String htmlContent, String author, LocalDateTime publishedAt, LocalDateTime crawledAt) {
         this.articleUrl = articleUrl;
         this.media = media;
         this.category = category;
         this.title = title;
+        this.article = article;
         this.htmlContent = htmlContent;
         this.author = author;
         this.publishedAt = publishedAt;
@@ -64,6 +68,7 @@ public class CrawledNewsArticle {
                 .media(dto.getMedia())
                 .category(dto.getCategory())
                 .title(dto.getTitle())
+                .article(dto.getArticle())
                 .htmlContent(dto.getHtmlContent())
                 .author(dto.getAuthor())
                 .publishedAt(dto.getPublishedAt())

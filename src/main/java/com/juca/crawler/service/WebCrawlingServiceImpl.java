@@ -3,7 +3,7 @@ package com.juca.crawler.service;
 import com.juca.crawler.domain.*;
 import com.juca.crawler.dto.*;
 import com.juca.crawler.repository.*;
-import com.juca.util.LogUtil;
+import com.juca.crawler.util.LogUtil;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -12,16 +12,14 @@ import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.parser.Parser;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -30,6 +28,7 @@ import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36";
@@ -257,11 +256,7 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                     stockPriceRepository.save(entity);
                 }
             } catch (Exception e) {
-                StockPriceDto stockPriceDto = new StockPriceDto();
-                stockPriceDto.setErrorMessage(e.getMessage());
-
-                StockPrice entity = StockPrice.dtoToEntity(stockPriceDto);
-                stockPriceRepository.save(entity);
+                LogUtil.logError("주식 크롤링 중 에러 발생: " + startUrl + " - " + e.getMessage(), e);
             }
         }
     }
@@ -300,6 +295,10 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 for (Element link : articleLinks) {
                     String articleUrl = link.attr("href");
 
+                    if (crawledNewsArticleRepository.findByArticleUrl(articleUrl).isPresent()) {
+                        continue;
+                    }
+
                     if (visitedArticle.contains(articleUrl)) {
                         continue;
                     }
@@ -311,7 +310,9 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            LogUtil.logError("뉴스 크롤링 중 에러 발생: " + url + " - " + e.getMessage(), e);
+        } catch (Exception e) {
+            LogUtil.logError("알 수 없는 오류 발생: " + url + " - " + e.getMessage(), e);
         }
 
     }
@@ -322,7 +323,7 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
         try {
-            long delay = 10000 + (long) (Math.random() * 30000); // 10초 ~ 40초 랜덤 딜레이
+            long delay = 30000 + (long) (Math.random() * 30000); // 30초 ~ 1분10초 랜덤 딜레이
             Thread.sleep(delay);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt(); // 인터럽트 상태 복원
@@ -331,58 +332,69 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         String htmlContent;
         Document articleDoc;
 
-        Connection.Response response = Jsoup.connect(articleUrl).userAgent(USER_AGENT)
-                .referrer("https://news.naver.com/")
-                .timeout(TIME_OUT)
-                .ignoreHttpErrors(true)
-                .ignoreContentType(true)
-                .execute();
+        try {
+            Connection.Response response = Jsoup.connect(articleUrl).userAgent(USER_AGENT)
+                    .referrer("https://news.naver.com/")
+                    .timeout(TIME_OUT)
+                    .ignoreHttpErrors(true)
+                    .ignoreContentType(true)
+                    .execute();
 
-        htmlContent = response.body();
-        articleDoc = Jsoup.parse(htmlContent);
+            htmlContent = response.body();
+            articleDoc = Jsoup.parse(htmlContent);
 
-        String media = null;
-        String title = null;
-        String dateStamp = null;
-        String author = null;
-        String category = null;
+            String media = null;
+            String title = null;
+            String article = null;
+            String dateStamp = null;
+            String author = null;
+            String category = null;
 
-        Element mediaElement = articleDoc.select("a.media_end_head_top_logo img").first();
-        Element titleElement = articleDoc.select("h2#title_area span").first();
-        Element dateElement = articleDoc.select("span.media_end_head_info_datestamp_time").first();
-        Element authorElement = articleDoc.select("em.media_end_head_journalist_name").first();
-        Element categoryElement = articleDoc.select("li.Nlist_item._LNB_ITEM.is_active").first();
+            Element mediaElement = articleDoc.select("a.media_end_head_top_logo img").first();
+            Element titleElement = articleDoc.select("h2#title_area span").first();
+            Element articleContent = articleDoc.select("div#newsct_article").first();
+            Element dateElement = articleDoc.select("span.media_end_head_info_datestamp_time").first();
+            Element authorElement = articleDoc.select("em.media_end_head_journalist_name").first();
+            Element categoryElement = articleDoc.select("li.Nlist_item._LNB_ITEM.is_active").first();
 
-        if (mediaElement != null) {
-            media = mediaElement.attr("title");
+            if (mediaElement != null) {
+                media = mediaElement.attr("title");
+            }
+
+            if (titleElement != null) {
+                title = titleElement.text();
+            }
+
+            if (articleContent != null) {
+                article = articleContent.text();
+            }
+
+            if (dateElement != null) {
+                dateStamp = dateElement.attr("data-date-time");
+            }
+
+            if (authorElement != null) {
+                author = authorElement.text();
+            }
+
+            if (categoryElement != null) {
+                category = categoryElement.text();
+            }
+
+            dto.setArticleUrl(articleUrl);
+            dto.setMedia(media);
+            dto.setCategory(category);
+            dto.setTitle(title);
+            dto.setArticle(article);
+            dto.setHtmlContent(htmlContent);
+            dto.setAuthor(author);
+            if (dateStamp != null) dto.setPublishedAt(LocalDateTime.parse(dateStamp, formatter));
+            dto.setCrawledAt(LocalDateTime.now());
+
+            crawledNewsArticleRepository.save(CrawledNewsArticle.dtoToEntity(dto));
+        } catch (Exception e) {
+            LogUtil.logError("뉴스 기사 수집 중 에러 발생: " + articleUrl + " - " + e.getMessage(), e);
         }
-
-        if (titleElement != null) {
-            title = titleElement.text();
-        }
-
-        if (dateElement != null) {
-            dateStamp = dateElement.attr("data-date-time");
-        }
-
-        if (authorElement != null) {
-            author = authorElement.text();
-        }
-
-        if (categoryElement != null) {
-            category = categoryElement.text();
-        }
-
-        dto.setArticleUrl(articleUrl);
-        dto.setMedia(media);
-        dto.setCategory(category);
-        dto.setTitle(title);
-        dto.setHtmlContent(htmlContent);
-        dto.setAuthor(author);
-        if (dateStamp != null) dto.setPublishedAt(LocalDateTime.parse(dateStamp, formatter));
-        dto.setCrawledAt(LocalDateTime.now());
-
-        crawledNewsArticleRepository.save(CrawledNewsArticle.dtoToEntity(dto));
     }
 
     /**
@@ -696,7 +708,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         try {
             return Integer.parseInt(cleanedText);
         } catch (NumberFormatException e) {
-            System.err.println("Integer 변환 실패: '" + text + "' -> '" + cleanedText + "'");
             return null;
         }
     }
@@ -714,7 +725,6 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         try {
             return Long.parseLong(cleanedText);
         } catch (NumberFormatException e) {
-            System.err.println("Long 변환 실패: '" + text + "' -> '" + cleanedText + "'");
             return null;
         }
     }
@@ -931,22 +941,14 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                     cnnArticleRepository.save(CnnArticle.toEntity(articleDto));
 
                 } else {
-                    articleDto.setErrorMessage("HTTP Error or Not HTML: Status=" + statusCode + ", Content-Type=" + contentType);
-                    articleDto.setCrawledAt(LocalDateTime.now());
                     LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - " + articleDto.getErrorMessage(), null);
                 }
             } catch (HttpStatusException e) {
                 LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - HTTP 오류: " + e.getStatusCode(), e);
-                // HTTP 상태 코드 에러 (404, 500 등)
-                articleDto.setErrorMessage("HTTP Error: " + e.getStatusCode() + " - " + e.getMessage());
-                articleDto.setStatusCode(e.getStatusCode());
-                articleDto.setCrawledAt(LocalDateTime.now());
+
             } catch (Exception e) {
                 LogUtil.logError("  [기사 크롤링 실패] " + currentArticleUrl + " - 알 수 없는 오류: " + e.getMessage(), e);
-                // 기타 모든 예외 (네트워크 오류, Jsoup 파싱 오류 등)
-                articleDto.setErrorMessage("Crawler Exception: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-                articleDto.setStatusCode(-1); // 또는 적절한 에러 코드
-                articleDto.setCrawledAt(LocalDateTime.now());
+
             }
         }
     }

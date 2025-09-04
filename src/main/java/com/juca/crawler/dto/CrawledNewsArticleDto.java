@@ -17,6 +17,7 @@ public class CrawledNewsArticleDto {
     String media;
     String category;
     String title;
+    String article;
     String htmlContent;
     String author;
     LocalDateTime publishedAt;
