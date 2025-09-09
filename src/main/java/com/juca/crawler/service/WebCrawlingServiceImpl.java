@@ -323,7 +323,7 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
         try {
-            long delay = 30000 + (long) (Math.random() * 30000); // 30초 ~ 1분10초 랜덤 딜레이
+            long delay = 20000 + (long) (Math.random() * 30000); // 20초 ~ 50초 랜덤 딜레이
             Thread.sleep(delay);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt(); // 인터럽트 상태 복원

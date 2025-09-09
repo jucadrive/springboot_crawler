@@ -27,19 +27,19 @@ public class CrawledNewsArticle {
     @Column(name = "media", nullable = false, length = 50)
     private String media;
 
-    @Column(name = "category", nullable = false, length = 10)
+    @Column(name = "category", length = 10)
     private String category;
 
     @Column(name = "title", nullable = false)
     private String title;
 
-    @Column(name = "article", nullable = false, columnDefinition = "Text")
+    @Column(name = "article", columnDefinition = "Text")
     private String article;
 
     @Column(name = "html_content", nullable = false, columnDefinition = "LongText")
     private String htmlContent;
 
-    @Column(name = "author", length = 10)
+    @Column(name = "author", length = 50)
     private String author;
 
     @Column(name = "published_at")
