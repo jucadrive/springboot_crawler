@@ -91,7 +91,7 @@ public class CrawlingScheduler {
         LogUtil.logSchedulerStart(schedulerName, methodName); // 스케줄러 시작 로그
 
         try {
-            webCrawlingService.articleCrawling(baseArticleUrl, 0);
+            webCrawlingService.cnnArticleCrawling(baseArticleUrl, 0);
             LogUtil.logSchedulerCompletion(schedulerName, methodName, "기사 크롤링 작업 성공적으로 완료."); // 완료 로그
         } catch (Exception e) {
             // 스케줄러 실행 중 최상위 예외 처리
@@ -117,7 +117,7 @@ public class CrawlingScheduler {
 
         try {
             for (String url : newsUrls) {
-                webCrawlingService.naverNewsCrawling(url, 0);
+                webCrawlingService.naverNewsCrawling(url);
             }
             LogUtil.logSchedulerCompletion(schedulerName, methodName, "기사 크롤링 작업 성공적으로 완료."); // 완료 로그
         } catch (Exception e) {

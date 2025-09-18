@@ -28,7 +28,6 @@ import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36";
@@ -264,10 +263,12 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
     /**
      *
      * @param url 네이버 뉴스 URL
-     * @param maxDepth 크롤링 깊이
      */
     @Override
-    public void naverNewsCrawling(String url, int maxDepth) {
+    @Transactional
+    public void naverNewsCrawling(String url) {
+
+        List<CrawledNewsArticle> articles = new ArrayList<>();
         Set<String> visitedArticle = new HashSet<>();
         String htmlContent;
         Document doc;
@@ -304,11 +305,12 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
                     }
 
                     if (articleUrl.startsWith("http")) {
-                        crawlArticle(articleUrl);
+                        crawlArticle(articleUrl, articles);
                         visitedArticle.add(articleUrl);
                     }
                 }
             }
+            crawledNewsArticleRepository.saveAll(articles);
         } catch (IOException e) {
             LogUtil.logError("뉴스 크롤링 중 에러 발생: " + url + " - " + e.getMessage(), e);
         } catch (Exception e) {
@@ -317,7 +319,7 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     }
 
-    private void crawlArticle(String articleUrl) throws IOException {
+    private void crawlArticle(String articleUrl, List<CrawledNewsArticle> articles) throws IOException {
 
         CrawledNewsArticleDto dto = new CrawledNewsArticleDto();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -391,7 +393,8 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
             if (dateStamp != null) dto.setPublishedAt(LocalDateTime.parse(dateStamp, formatter));
             dto.setCrawledAt(LocalDateTime.now());
 
-            crawledNewsArticleRepository.save(CrawledNewsArticle.dtoToEntity(dto));
+//            crawledNewsArticleRepository.save(CrawledNewsArticle.dtoToEntity(dto));
+            articles.add(CrawledNewsArticle.dtoToEntity(dto));
         } catch (Exception e) {
             LogUtil.logError("뉴스 기사 수집 중 에러 발생: " + articleUrl + " - " + e.getMessage(), e);
         }
@@ -780,13 +783,14 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
 
     // CNN 기사 크롤링 진입점 메서드
     @Override
-    public void articleCrawling(String startUrl, int maxDepth) {
+    @Transactional
+    public void cnnArticleCrawling(String startUrl, int maxDepth) {
         Queue<String> articleUrlsToCrawl = new LinkedList<>();
         Set<String> visitedArticleUrls = new HashSet<>();
 
         collectArticleUrlsFromMainPage(startUrl, articleUrlsToCrawl, visitedArticleUrls);
 
-        crawlAndSaveArticleDetails(articleUrlsToCrawl, visitedArticleUrls);
+        crawlAndSaveArticleDetails(articleUrlsToCrawl);
     }
 
     /**
@@ -846,10 +850,8 @@ public class WebCrawlingServiceImpl implements WebCrawlingService {
      * 2단계: 수집된 기사 URL 큐를 순회하며 각 기사 본문을 크롤링하고 DB에 저장합니다.
      *
      * @param articleUrlsToCrawl 기사 URL을 담은 큐
-     * @param visitedArticleUrls 방문했거나 방문 예정인 기사 URL을 기록할 Set (여기서는 주로 로깅/확인용)
      */
-    private void crawlAndSaveArticleDetails(Queue<String> articleUrlsToCrawl,
-                                            Set<String> visitedArticleUrls) {
+    private void crawlAndSaveArticleDetails(Queue<String> articleUrlsToCrawl) {
         while (!articleUrlsToCrawl.isEmpty()) {
             String currentArticleUrl = articleUrlsToCrawl.poll();
 
