@@ -83,7 +83,7 @@ public class CrawlingScheduler {
 //        webCrawlingService.stockPriceCrawling(url, maxDepth);
 //    }
 
-    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(30000, 60000)}") // 5분 ~ 1시간 사이 랜덤 딜레이
+//    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(30000, 60000)}") // 5분 ~ 1시간 사이 랜덤 딜레이
     public void startCnnArticleCrawling() {
         String schedulerName = "CNN Article Crawler Scheduler";
         String methodName = "startArticleCrawling";
@@ -99,7 +99,7 @@ public class CrawlingScheduler {
         }
     }
 
-    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(1800000, 3600000)}") // 30분 ~ 1시간 사이 랜덤 딜레이
+//    @Scheduled(fixedDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(1800000, 3600000)}") // 30분 ~ 1시간 사이 랜덤 딜레이
     public void startNaverNewsArticleCrawling() {
         String schedulerName = "Naver News Article Crawler Scheduler";
         String methodName = "startNaverNewsArticleCrawling";
